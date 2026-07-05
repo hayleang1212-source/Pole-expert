@@ -1,4 +1,4 @@
- import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Document, Page, Outline, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -17,11 +17,6 @@ import {
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-
-// Adresse de votre backend Drive (voir dossier /backend). En développement,
-// c'est votre serveur local ; une fois déployé sur Render/Railway, l'URL
-// publique de ce service (ex: https://mon-backend.onrender.com).
-const BACKEND_URL = "http://localhost:3001";
 
 // ---------------------------------------------------------------------------
 // PDF LOCAUX — Vite scanne le dossier src/documents/ au démarrage.
@@ -75,7 +70,7 @@ const CATEGORIES = [
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
-      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, driveFolderId: "12E98Q_dQ1bgy8nfu0yhffUJie5u36S6H" },
+      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server },
       { id: "vis-seche", label: "Vis sèche", icon: Server },
       { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge },
       { id: "mobilair", label: "Mobilair", icon: Truck },
@@ -329,36 +324,8 @@ function SubMenu({ category, onSelect }) {
 // ÉCRAN 3 — PAGE FINALE (contenu réel + bouton retour déjà dans le bandeau)
 // ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
-  const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
-  const [driveDocuments, setDriveDocuments] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const documents = useMemo(() => getLocalDocuments(item.id), [item.id]);
   const [viewingDoc, setViewingDoc] = useState(null);
-
-  // Si l'item a un dossier Drive associé, on va chercher les PDF via le
-  // backend (le fichier reste privé dans Drive, il transite à la demande).
-  // Sinon, on utilise les PDF locaux détectés dans src/documents/.
-  useEffect(() => {
-    if (!item.driveFolderId) return;
-
-    setLoading(true);
-    setError(null);
-
-    fetch(`${BACKEND_URL}/api/documents/${item.driveFolderId}`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Erreur réseau");
-        return res.json();
-      })
-      .then((files) =>
-        setDriveDocuments(
-          files.map((f) => ({ id: f.id, name: f.name, url: `${BACKEND_URL}/api/file/${f.id}` }))
-        )
-      )
-      .catch(() => setError("Impossible de charger les documents depuis Drive."))
-      .finally(() => setLoading(false));
-  }, [item.driveFolderId]);
-
-  const documents = item.driveFolderId ? driveDocuments : localDocuments;
 
   return (
     <div style={{ maxWidth: "480px" }}>
@@ -392,15 +359,9 @@ function DetailPage({ category, item }) {
           Notice d'utilisation
         </h3>
 
-        {loading && <p style={{ fontSize: "13px", color: COLORS.textMuted }}>Chargement…</p>}
-
-        {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
-
-        {!loading && !error && documents.length === 0 && (
+        {documents.length === 0 && (
           <p style={{ fontSize: "13px", color: COLORS.textMuted }}>
-            {item.driveFolderId
-              ? "Aucun document dans ce dossier Drive pour l'instant."
-              : <>Aucun document dans <code>src/documents/{item.id}/</code> pour l'instant.</>}
+            Aucun document dans <code>src/documents/{item.id}/</code> pour l'instant.
           </p>
         )}
 
@@ -439,7 +400,7 @@ function DetailPage({ category, item }) {
 function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
-  const [showOutline, setShowOutline] = useState(false);
+  const [showOutline, setShowOutline] = useState(true);
   const [hasOutline, setHasOutline] = useState(true); // optimiste, corrigé après chargement
   const [rotation, setRotation] = useState(0); // 0, 90, 180, 270
 
