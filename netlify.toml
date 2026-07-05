@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Le dossier netlify/edge-functions/ est détecté automatiquement par Netlify.
+# Le "path" d'application de la fonction est déjà déclaré dans le fichier
+# auth.js lui-même (export const config = { path: "/*" }), donc rien
+# d'autre à ajouter ici pour l'activer.
