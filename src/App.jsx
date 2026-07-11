@@ -24,6 +24,9 @@ import {
 // besoin de le copier dans votre projet.
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
+import Formation from "./assets/Formation.png";
+import Pièces from "./assets/Pièces.png";
+import Support from "./assets/support.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
@@ -104,7 +107,7 @@ const CATEGORIES = [
     id: "support-technique",
     label: "Support technique",
     description: "Documentation et assistance",
-    icon: Headset,
+    icon: Support,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
