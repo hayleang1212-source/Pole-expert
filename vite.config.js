@@ -7,5 +7,5 @@ export default defineConfig({
   // https://hayleang1212.github.io/Pole-expert/
   // (pas à la racine du domaine), donc tous les chemins générés par Vite
   // doivent être préfixés en conséquence.
-  base: "/Pole-expert/",
+  base: "/Pole-expert-KAESER/",
 });
