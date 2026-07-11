@@ -107,7 +107,7 @@ const CATEGORIES = [
     id: "support-technique",
     label: "Support technique",
     description: "Documentation et assistance",
-    icon: Support,
+    icon: Headset,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
