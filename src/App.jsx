@@ -2,7 +2,14 @@
 import { Document, Page, Outline, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
-import netlifyIdentity from "netlify-identity-widget";
+import { auth, db } from "./firebase";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail,
+} from "firebase/auth";
+import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
@@ -153,80 +160,52 @@ const CATEGORIES = [
 
 export default function App() {
   // ---------------------------------------------------------------------
-  // AUTHENTIFICATION (Netlify Identity) — l'app entière est verrouillée
-  // tant que l'utilisateur n'est pas connecté avec un compte autorisé.
+  // AUTHENTIFICATION (Firebase Auth) — l'app entière est verrouillée tant
+  // que l'utilisateur n'est pas connecté avec un compte autorisé.
   // ---------------------------------------------------------------------
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [kickedOut, setKickedOut] = useState(false);
 
   useEffect(() => {
-    netlifyIdentity.init();
-
-    const currentUser = netlifyIdentity.currentUser();
-    setUser(currentUser);
-    setAuthReady(true);
-
-    netlifyIdentity.on("login", (u) => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setKickedOut(false);
-      netlifyIdentity.close();
+      setAuthReady(true);
+      if (u) setKickedOut(false);
     });
-    netlifyIdentity.on("logout", () => setUser(null));
-
-    return () => {
-      netlifyIdentity.off("login");
-      netlifyIdentity.off("logout");
-    };
+    return unsubscribe;
   }, []);
 
   // -----------------------------------------------------------------------
   // SESSION UNIQUE — dès la connexion, on enregistre un identifiant de
-  // session côté serveur. Toutes les 20 secondes, on vérifie qu'il s'agit
-  // toujours de la session active : si quelqu'un s'est reconnecté ailleurs
-  // avec les mêmes identifiants, cette session est automatiquement fermée.
+  // session dans Firestore. On écoute ensuite ce document en temps réel :
+  // si quelqu'un se reconnecte ailleurs avec les mêmes identifiants, son
+  // login écrase ce document, et cette session-ci se ferme automatiquement
+  // dès que le changement est détecté.
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!user) return;
 
-    const sessionKey = `pole-expert-session-${user.id}`;
+    const sessionKey = `pole-expert-session-${user.uid}`;
     let sessionId = localStorage.getItem(sessionKey);
     if (!sessionId) {
       sessionId = crypto.randomUUID();
       localStorage.setItem(sessionKey, sessionId);
     }
 
-    const authHeaders = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${user.token.access_token}`,
-    };
+    const sessionRef = doc(db, "sessions", user.uid);
 
-    // On (ré)enregistre cette session comme active — utile aussi après un
-    // rafraîchissement de page, pour "réclamer" la session si elle a été
-    // reprise entre-temps par un autre appareil puis relâchée.
-    fetch("/.netlify/functions/session-register", {
-      method: "POST",
-      headers: authHeaders,
-      body: JSON.stringify({ sessionId }),
-    }).catch(() => {}); // une erreur réseau ponctuelle ne doit pas bloquer l'app
+    setDoc(sessionRef, { sessionId, updatedAt: serverTimestamp() }).catch(() => {});
 
-    const interval = setInterval(() => {
-      fetch("/.netlify/functions/session-check", {
-        method: "POST",
-        headers: authHeaders,
-        body: JSON.stringify({ sessionId }),
-      })
-        .then((res) => res.json())
-        .then(({ valid }) => {
-          if (!valid) {
-            setKickedOut(true);
-            netlifyIdentity.logout();
-          }
-        })
-        .catch(() => {}); // une erreur réseau ponctuelle ne déconnecte pas l'utilisateur
-    }, 20000); // toutes les 20 secondes
+    const unsubscribe = onSnapshot(sessionRef, (snap) => {
+      const activeSessionId = snap.data()?.sessionId;
+      if (activeSessionId && activeSessionId !== sessionId) {
+        setKickedOut(true);
+        signOut(auth);
+      }
+    });
 
-    return () => clearInterval(interval);
+    return unsubscribe;
   }, [user]);
 
   // La pile de navigation : [] = menu principal
@@ -281,7 +260,7 @@ export default function App() {
           style={{ height: "80px", width: "auto", display: "block" }} 
         />
         <button
-          onClick={() => netlifyIdentity.logout()}
+          onClick={() => signOut(auth)}
           style={{
             fontSize: "13px",
             color: COLORS.textMuted,
@@ -779,6 +758,45 @@ function Card({ icon: Icon, label, description, iconColor, onClick }) {
 // selon si la personne a déjà été invitée).
 // ---------------------------------------------------------------------------
 function LoginScreen({ kickedOut }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      setError(
+        err.code === "auth/invalid-credential" || err.code === "auth/wrong-password"
+          ? "E-mail ou mot de passe incorrect."
+          : err.code === "auth/user-not-found"
+          ? "Aucun compte trouvé avec cet e-mail."
+          : "Impossible de se connecter. Réessayez."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError("Entrez votre e-mail ci-dessus, puis cliquez à nouveau sur ce lien.");
+      return;
+    }
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch {
+      setError("Impossible d'envoyer l'e-mail de réinitialisation.");
+    }
+  };
+
   return (
     <div
       style={{
@@ -787,51 +805,98 @@ function LoginScreen({ kickedOut }) {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "24px",
+        gap: "20px",
         background: COLORS.bg,
         fontFamily: "'Inter', system-ui, sans-serif",
+        padding: "20px",
       }}
     >
       <img src={logo} alt="Kaeser Compresseurs" style={{ height: "70px", width: "auto" }} />
 
       {kickedOut && (
-        <p
-          style={{
-            background: "#FBE9E7",
-            color: "#C0392B",
-            fontSize: "13px",
-            padding: "10px 16px",
-            borderRadius: "8px",
-            maxWidth: "320px",
-            textAlign: "center",
-          }}
-        >
+        <p style={alertStyle}>
           Vous avez été déconnecté(e) car ce compte a été utilisé sur un autre appareil.
         </p>
       )}
 
-      <p style={{ color: COLORS.textMuted, fontSize: "14px", maxWidth: "320px", textAlign: "center" }}>
-        Cette application est réservée aux utilisateurs autorisés. Connectez-vous avec
-        l'adresse e-mail sur laquelle vous avez reçu votre invitation.
-      </p>
-      <button
-        onClick={() => netlifyIdentity.open()}
-        style={{
-          background: COLORS.gold,
-          color: COLORS.navy,
-          border: "none",
-          borderRadius: "10px",
-          padding: "14px 28px",
-          fontSize: "14px",
-          fontWeight: 700,
-          cursor: "pointer",
-        }}
+      {resetSent && (
+        <p style={{ ...alertStyle, background: "#EAF7EE", color: "#1E7A34" }}>
+          E-mail envoyé — suivez le lien reçu pour définir votre mot de passe, puis revenez vous connecter ici.
+        </p>
+      )}
+
+      {error && <p style={alertStyle}>{error}</p>}
+
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "320px" }}
       >
-        Se connecter
+        <input
+          type="email"
+          placeholder="votre.email@kaeser.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          style={inputStyle}
+        />
+        <input
+          type="password"
+          placeholder="Mot de passe"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          style={inputStyle}
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            background: COLORS.gold,
+            color: COLORS.navy,
+            border: "none",
+            borderRadius: "10px",
+            padding: "14px 28px",
+            fontSize: "14px",
+            fontWeight: 700,
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
+          {loading ? "Connexion…" : "Se connecter"}
+        </button>
+      </form>
+
+      <button
+        onClick={handleForgotPassword}
+        style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}
+      >
+        Mot de passe oublié / première connexion
       </button>
+
+      <p style={{ color: COLORS.textMuted, fontSize: "12px", maxWidth: "320px", textAlign: "center" }}>
+        Cette application est réservée aux utilisateurs autorisés par l'administrateur.
+      </p>
     </div>
   );
 }
+
+const alertStyle = {
+  background: "#FBE9E7",
+  color: "#C0392B",
+  fontSize: "13px",
+  padding: "10px 16px",
+  borderRadius: "8px",
+  maxWidth: "320px",
+  textAlign: "center",
+};
+
+const inputStyle = {
+  padding: "12px 14px",
+  borderRadius: "8px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  fontSize: "14px",
+  outline: "none",
+};
 
 const gridStyle = {
   display: "grid",
