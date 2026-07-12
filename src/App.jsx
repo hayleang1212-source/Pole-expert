@@ -109,7 +109,7 @@ const CATEGORIES = [
     label: "Support technique",
     description: "Documentation et assistance",
     icon: Headset,
-    image: Support,
+    image: iconSupportTechnique,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
@@ -133,7 +133,7 @@ const CATEGORIES = [
     label: "Garantie",
     description: "Enregistrements et demandes",
     icon: ShieldCheck,
-    image: Garantie,
+    image: iconGarantie,
     items: [
       { id: "conditions", label: "Conditions de garantie", icon: FileCheck },
       { id: "duree", label: "Durée de couverture", icon: Clock },
@@ -145,7 +145,7 @@ const CATEGORIES = [
     label: "Pièces détachées",
     description: "Catalogues et références",
     icon: Package,
-    image: Pièces,
+    image: iconPiecesDetachees,
     items: [
       { id: "recherche", label: "Rechercher une pièce", icon: Search },
       { id: "catalogue", label: "Catalogue", icon: PackageSearch },
@@ -157,7 +157,7 @@ const CATEGORIES = [
     label: "Formation",
     description: "Modules experts",
     icon: GraduationCap,
-    image: Formation,
+    image: iconFormation,
     items: [
       { id: "guides", label: "Guides pratiques", icon: BookOpen },
       { id: "videos", label: "Tutoriels vidéo", icon: Video },
