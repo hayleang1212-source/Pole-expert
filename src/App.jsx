@@ -1,4 +1,4 @@
-  import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Document, Page, Outline, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -320,13 +320,6 @@ export default function App() {
           justifyContent: "center",
         }}
       >
-        {stack.length > 0 && (
-          <button onClick={pop} style={backBtnStyle} aria-label="Retour">
-            <ChevronLeft size={18} />
-            Retour
-          </button>
-        )}
-
         <h1
           style={{
             fontSize: "40px",
@@ -354,7 +347,7 @@ export default function App() {
           }} 
         />
 
-        {/* fil d'ariane discret */}
+        {/* fil d'ariane cliquable */}
         {stack.length > 0 && (
           <div
             style={{
@@ -369,12 +362,27 @@ export default function App() {
             <span style={{ cursor: "pointer" }} onClick={goHome}>
               Accueil
             </span>
-            {stack.map((s, i) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ opacity: 0.6 }}>/</span>
-                <span>{s.data.label}</span>
-              </span>
-            ))}
+            {stack.map((s, i) => {
+              const isLast = i === stack.length - 1;
+              return (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ opacity: 0.6 }}>/</span>
+                  <span
+                    style={{
+                      cursor: isLast ? "default" : "pointer",
+                      opacity: isLast ? 1 : 0.8,
+                    }}
+                    onClick={() => {
+                      if (!isLast) {
+                        setStack((prev) => prev.slice(0, i + 1));
+                      }
+                    }}
+                  >
+                    {s.data.label}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         )}
       </section>
@@ -478,7 +486,7 @@ function SubMenu({ category, onSelect }) {
 }
 
 // ---------------------------------------------------------------------------
-// ÉCRAN 3 — PAGE FINALE (contenu réel + bouton retour déjà dans le bandeau)
+// ÉCRAN 3 — PAGE FINALE (contenu réel)
 // ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
   const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
@@ -488,9 +496,6 @@ function DetailPage({ category, item }) {
   const [viewingDoc, setViewingDoc] = useState(null);
   const [selectedDocId, setSelectedDocId] = useState("");
 
-  // Si l'item a un dossier Drive associé, on interroge directement l'API
-  // Drive avec la clé API (le dossier doit être partagé "avec le lien").
-  // Sinon, on utilise les PDF locaux détectés dans src/documents/.
   useEffect(() => {
     if (!item.driveFolderId) return;
 
@@ -601,7 +606,6 @@ function DetailPage({ category, item }) {
         )}
       </div>
 
-      {/* ---------- BOUTON "CONTACTER NOS EXPERTS" ---------- */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "28px" }}>
         <button
           onClick={() => setShowExpertForm(true)}
@@ -626,10 +630,8 @@ function DetailPage({ category, item }) {
         </button>
       </div>
 
-      {/* ---------- VISIONNEUSE PDF EN LECTURE SEULE ---------- */}
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
 
-      {/* ---------- FORMULAIRE DE DEMANDE D'EXPERTISE ---------- */}
       {showExpertForm && (
         <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />
       )}
@@ -637,24 +639,6 @@ function DetailPage({ category, item }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Visionneuse PDF : rendu page par page en <canvas> via react-pdf/pdf.js.
-// Comme ce n'est plus le lecteur natif du navigateur, il n'y a aucun
-// bouton "Télécharger" ou "Imprimer" natif — juste l'image de chaque page.
-// Le clic droit est désactivé pour bloquer le "Enregistrer l'image sous...".
-// Note honnête : ceci dissuade un usage courant, mais n'empêche pas un
-// utilisateur déterminé (capture d'écran, outils développeur) — il n'y a
-// pas de verrou 100% infranchissable pour un contenu affiché à l'écran.
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// FORMULAIRE DE DEMANDE D'EXPERTISE — tous les champs sont obligatoires
-// sauf la pièce jointe. À la validation, la demande est enregistrée dans
-// Firestore (collection "expertRequests"), avec l'e-mail de l'utilisateur
-// connecté et le contexte (produit/catégorie) pour la retrouver facilement.
-// Remarque : la pièce jointe n'est pas téléversée (seul son nom est
-// conservé) — l'envoi de fichiers nécessiterait Firebase Storage, non
-// configuré ici.
-// ---------------------------------------------------------------------------
 function ExpertRequestForm({ item, category, onClose }) {
   const [form, setForm] = useState({
     nom: "",
@@ -687,13 +671,6 @@ function ExpertRequestForm({ item, category, onClose }) {
         createdAt: serverTimestamp(),
       });
 
-      // Envoi de l'e-mail réel au support via Google Apps Script (le
-      // destinataire est défini dans le script lui-même). mode: "no-cors"
-      // est nécessaire pour appeler Apps Script depuis le navigateur sans
-      // configuration CORS côté script — on ne peut donc pas lire la
-      // réponse, mais l'e-mail part normalement si l'URL est correcte.
-      // Une erreur d'envoi n'empêche pas la demande d'être enregistrée
-      // dans Firestore (déjà fait ci-dessus).
       await fetch(APPS_SCRIPT_URL, {
         method: "POST",
         mode: "no-cors",
@@ -847,8 +824,6 @@ function ExpertRequestForm({ item, category, onClose }) {
   );
 }
 
-// Petit champ avec une bulle d'aide "?" au survol/focus — évite d'alourdir
-// l'interface avec du texte explicatif permanent sous chaque champ.
 function FieldWithTooltip({ tooltip, ...inputProps }) {
   return (
     <div style={{ position: "relative" }}>
@@ -896,12 +871,9 @@ function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [showOutline, setShowOutline] = useState(true);
-  const [hasOutline, setHasOutline] = useState(true); // optimiste, corrigé après chargement
-  const [rotation, setRotation] = useState(0); // 0, 90, 180, 270
+  const [hasOutline, setHasOutline] = useState(true);
+  const [rotation, setRotation] = useState(0);
 
-  // Blocage du clic droit au niveau du document entier tant que la
-  // visionneuse est ouverte — plus fiable qu'un seul gestionnaire sur
-  // un <div>, car ça couvre aussi les éléments internes de react-pdf.
   useEffect(() => {
     const block = (e) => e.preventDefault();
     document.addEventListener("contextmenu", block);
@@ -1059,9 +1031,6 @@ function PdfViewer({ doc, onClose }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// COMPOSANT RÉUTILISABLE — une carte cliquable (icône + titre + description)
-// ---------------------------------------------------------------------------
 function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   return (
     <button
@@ -1115,14 +1084,6 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// STYLES PARTAGÉS
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// ÉCRAN DE CONNEXION — affiché tant que l'utilisateur n'est pas authentifié.
-// Ouvre directement le widget Netlify Identity (connexion ou inscription,
-// selon si la personne a déjà été invitée).
-// ---------------------------------------------------------------------------
 function LoginScreen({ kickedOut }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
