@@ -758,7 +758,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 110 : 100, height: description ? 110 : 100, objectFit: "contain" }}
+          style={{ width: description ? 220 : 200, height: description ? 220 : 200, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
