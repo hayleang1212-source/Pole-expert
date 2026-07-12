@@ -40,6 +40,7 @@ import imgVariateur from "./assets/Variateur.png";
 import imgInstruments from "./assets/Instruments.png";
 import imgHuile from "./assets/Huile.png";
 import imgAda from "./assets/Ada.png";
+import imgBelimo from "./assets/BELIMO.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
@@ -137,7 +138,7 @@ const CATEGORIES = [
       { id: "instruments", label: "Instruments", icon: Thermometer, image: imgInstruments },
       { id: "huile", label: "Huile", icon: Droplet, image: imgHuile },
       { id: "ada", label: "ADA", icon: Component, image: imgAda },
-      { id: "belimo", label: "BELIMO", icon: PlugZap },
+      { id: "belimo", label: "BELIMO", icon: PlugZap, image: imgBelimo },
     ],
   },
   {
@@ -460,6 +461,7 @@ function DetailPage({ category, item }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewingDoc, setViewingDoc] = useState(null);
+  const [selectedDocId, setSelectedDocId] = useState("");
 
   // Si l'item a un dossier Drive associé, on interroge directement l'API
   // Drive avec la clé API (le dossier doit être partagé "avec le lien").
@@ -478,19 +480,32 @@ function DetailPage({ category, item }) {
 
   const documents = item.driveFolderId ? driveDocuments : localDocuments;
 
+  const handleViewSelected = () => {
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (doc) setViewingDoc(doc);
+  };
+
   return (
     <div style={{ maxWidth: "480px" }}>
-      <div
-        style={{
-          display: "inline-flex",
-          padding: "16px",
-          borderRadius: "14px",
-          background: "#FBF1D9",
-          marginBottom: "18px",
-        }}
-      >
-        <item.icon size={30} color={COLORS.gold} />
-      </div>
+      {item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          style={{ width: 100, height: 100, objectFit: "contain", marginBottom: "18px" }}
+        />
+      ) : (
+        <div
+          style={{
+            display: "inline-flex",
+            padding: "16px",
+            borderRadius: "14px",
+            background: "#FBF1D9",
+            marginBottom: "18px",
+          }}
+        >
+          <item.icon size={30} color={COLORS.gold} />
+        </div>
+      )}
       <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px" }}>{item.label}</h2>
       <p style={{ color: COLORS.textMuted, fontSize: "14px", lineHeight: 1.6, marginBottom: "22px" }}>
         Voici la page de destination pour « {item.label} », dans la catégorie « {category.label} ».
@@ -522,21 +537,43 @@ function DetailPage({ category, item }) {
           </p>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {documents.map((doc) => (
-            <button
-              key={doc.id}
-              onClick={() => setViewingDoc(doc)}
-              style={docLinkStyle}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.gold)}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.cardBorder)}
+        {!loading && !error && documents.length > 0 && (
+          <div style={{ display: "flex", gap: "8px" }}>
+            <select
+              value={selectedDocId}
+              onChange={(e) => setSelectedDocId(e.target.value)}
+              style={selectStyle}
             >
-              <FileText size={18} color={COLORS.gold} />
-              <span style={{ flex: 1, fontSize: "13px", textAlign: "left" }}>{doc.name}</span>
-              <Eye size={14} color={COLORS.textMuted} />
+              <option value="">Choisir un document…</option>
+              {documents.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  {doc.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleViewSelected}
+              disabled={!selectedDocId}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: selectedDocId ? COLORS.gold : "#EFEFEC",
+                color: selectedDocId ? COLORS.navy : COLORS.textMuted,
+                border: "none",
+                borderRadius: "10px",
+                padding: "0 18px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: selectedDocId ? "pointer" : "default",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Eye size={16} />
+              Afficher
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* ---------- VISIONNEUSE PDF EN LECTURE SEULE ---------- */}
@@ -758,7 +795,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 220 : 200, height: description ? 220 : 200, objectFit: "contain" }}
+          style={{ width: description ? 147 : 133, height: description ? 147 : 133, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
@@ -955,6 +992,17 @@ const searchInputStyle = {
   fontSize: "14px",
   color: COLORS.navy,
   background: "transparent",
+};
+
+const selectStyle = {
+  flex: 1,
+  padding: "0 14px",
+  height: "42px",
+  borderRadius: "10px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  background: "#FFFFFF",
+  color: COLORS.navy,
+  fontSize: "13px",
 };
 
 const docLinkStyle = {
