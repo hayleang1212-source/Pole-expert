@@ -135,9 +135,9 @@ const CATEGORIES = [
       {
         id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur,
         items: [
-          { id: "sc2-vis", label: "Compresseur SC2", icon: Settings, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
-          { id: "sc3-vis", label: "Compresseur SC3", icon: Settings, driveFolderId: "19Z-TuSJgRa3Aq3btywU2AsdT746WJwtX" },
-          { id: "scb-vis", label: "Compresseur SCB", icon: Settings, driveFolderId: "1PqDpXZQGdGXvwpV421WyY9scanMmCQhC" },
+          { id: "sc2-vis", label: "Compresseur SC2", icon: Settings, image: imgCompresseur, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+          { id: "sc3-vis", label: "Compresseur SC3", icon: Settings, image: imgCompresseur, driveFolderId: "19Z-TuSJgRa3Aq3btywU2AsdT746WJwtX" },
+          { id: "scb-vis", label: "Compresseur SCB", icon: Settings, image: imgCompresseur, driveFolderId: "1PqDpXZQGdGXvwpV421WyY9scanMmCQhC" },
         ],
       },
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
@@ -353,9 +353,9 @@ export default function App() {
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "6px",
+              gap: "10px",
               marginTop: "14px",
-              fontSize: "12px",
+              fontSize: "24px",
               opacity: 0.85,
             }}
           >
@@ -365,12 +365,15 @@ export default function App() {
             {stack.map((s, i) => {
               const isLast = i === stack.length - 1;
               return (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                   <span style={{ opacity: 0.6 }}>/</span>
                   <span
                     style={{
                       cursor: isLast ? "default" : "pointer",
-                      opacity: isLast ? 1 : 0.8,
+                      opacity: 1,
+                      border: isLast ? `2px solid ${COLORS.gold}` : "none",
+                      borderRadius: isLast ? "8px" : 0,
+                      padding: isLast ? "2px 10px" : 0,
                     }}
                     onClick={() => {
                       if (!isLast) {
