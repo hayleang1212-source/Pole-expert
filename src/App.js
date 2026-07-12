@@ -9,14 +9,17 @@ import {
   signOut,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
+
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
   Search, PackageSearch, ClipboardList, BookOpen, Video, Award,
   FileText, Server, Wind, Gauge, Truck, Disc,
   MonitorSmartphone, Cpu, SlidersHorizontal, Thermometer, Droplet,
-  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw
+  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw, Settings, HelpCircle,
+  ArrowRight, Paperclip
 } from "lucide-react";
 
 import logo from "./assets/logo-kaeser.png";
@@ -37,12 +40,9 @@ import imgVariateur from "./assets/Variateur.png";
 import imgInstruments from "./assets/Instruments.png";
 import imgHuile from "./assets/Huile.png";
 import imgAda from "./assets/Ada.png";
-
+import imgBelimo from "./assets/BELIMO.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-// ---------------------------------------------------------------------------
-// PDF GOOGLE DRIVE
-// ---------------------------------------------------------------------------
 const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
 
 async function getDriveDocuments(folderId) {
@@ -65,9 +65,6 @@ async function getDriveDocuments(folderId) {
   }));
 }
 
-// ---------------------------------------------------------------------------
-// PDF LOCAUX
-// ---------------------------------------------------------------------------
 const PDF_MODULES = import.meta.glob("/src/documents/**/*.pdf", {
   eager: true,
   query: "?url",
@@ -85,7 +82,6 @@ function getLocalDocuments(itemId) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Couleurs de la charte
 const COLORS = {
   navy: "#0B1F3A",
   gold: "#F0AB00",
@@ -96,20 +92,24 @@ const COLORS = {
   textMuted: "#6B7280",
 };
 
-// ---------------------------------------------------------------------------
-// STRUCTURE DES DONNÉES
-// ---------------------------------------------------------------------------
 const CATEGORIES = [
   {
     id: "support-technique",
     label: "Support technique",
     description: "Documentation et assistance",
     icon: Headset,
-    image: iconSupportTechnique,
+    image: imgCompresseur,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
-      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+      {
+        id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur,
+        items: [
+          { id: "sc2-vis", label: "Compresseur SC2", icon: Settings, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+          { id: "sc3-vis", label: "Compresseur SC3", icon: Settings, driveFolderId: "19Z-TuSJgRa3Aq3btywU2AsdT746WJwtX" },
+          { id: "scb-vis", label: "Compresseur SCB", icon: Settings, driveFolderId: "1PqDpXZQGdGXvwpV421WyY9scanMmCQhC" },
+        ],
+      },
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
       { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
       { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
@@ -121,7 +121,7 @@ const CATEGORIES = [
       { id: "instruments", label: "Instruments", icon: Thermometer, image: imgInstruments },
       { id: "huile", label: "Huile", icon: Droplet, image: imgHuile },
       { id: "ada", label: "ADA", icon: Component, image: imgAda },
-      { id: "belimo", label: "BELIMO", icon: PlugZap },
+      { id: "belimo", label: "BELIMO", icon: PlugZap, image: imgBelimo },
     ],
   },
   {
@@ -129,7 +129,7 @@ const CATEGORIES = [
     label: "Garantie",
     description: "Enregistrements et demandes",
     icon: ShieldCheck,
-    image: iconGarantie,
+    image: imgCompresseur,
     items: [
       { id: "conditions", label: "Conditions de garantie", icon: FileCheck },
       { id: "duree", label: "Durée de couverture", icon: Clock },
@@ -141,7 +141,7 @@ const CATEGORIES = [
     label: "Pièces détachées",
     description: "Catalogues et références",
     icon: Package,
-    image: iconPiecesDetachees,
+    image: imgCompresseur,
     items: [
       { id: "recherche", label: "Rechercher une pièce", icon: Search },
       { id: "catalogue", label: "Catalogue", icon: PackageSearch },
@@ -153,7 +153,7 @@ const CATEGORIES = [
     label: "Formation",
     description: "Modules experts",
     icon: GraduationCap,
-    image: iconFormation,
+    image: imgCompresseur,
     items: [
       { id: "guides", label: "Guides pratiques", icon: BookOpen },
       { id: "videos", label: "Tutoriels vidéo", icon: Video },
@@ -187,6 +187,7 @@ export default function App() {
     }
 
     const sessionRef = doc(db, "sessions", user.uid);
+
     setDoc(sessionRef, { sessionId, updatedAt: serverTimestamp() }).catch(() => {});
 
     const unsubscribe = onSnapshot(sessionRef, (snap) => {
@@ -201,6 +202,7 @@ export default function App() {
   }, [user]);
 
   const [stack, setStack] = useState([]);
+
   const push = (entry) => setStack((s) => [...s, entry]);
   const pop = () => setStack((s) => s.slice(0, -1));
   const goHome = () => setStack([]);
@@ -209,7 +211,10 @@ export default function App() {
   const activeCategory = stack.find((s) => s.type === "category")?.data;
 
   if (!authReady) return null;
-  if (!user) return <LoginScreen kickedOut={kickedOut} />;
+
+  if (!user) {
+    return <LoginScreen kickedOut={kickedOut} />;
+  }
 
   return (
     <div
@@ -222,7 +227,7 @@ export default function App() {
         flexDirection: "column",
       }}
     >
-      <div style={{ height: "20px", background: "#FFC800" }} />
+      <div style={{ height: "20px", background: "#FFC800"}} />
 
       <header
         style={{
@@ -234,7 +239,11 @@ export default function App() {
           borderBottom: "1px solid #EFEFEC",
         }}
       >
-        <img src={logo} alt="Kaeser Compresseurs" style={{ height: "80px", width: "auto", display: "block" }} />
+      <img 
+          src={logo} 
+          alt="Kaeser Compresseurs" 
+          style={{ height: "80px", width: "auto", display: "block" }} 
+        />
         <button
           onClick={() => signOut(auth)}
           style={{
@@ -255,95 +264,169 @@ export default function App() {
         style={{
           background: COLORS.bannerGray,
           color: "#FFFFFF",
-          padding: "3px 24px 20px 24px",
+          padding: "3px 24px 20px 24px", 
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
         }}
       >
-        {stack.length > 0 && (
-          <button onClick={pop} style={backBtnStyle} aria-label="Retour">
-            <ChevronLeft size={18} />
-            Retour
-          </button>
-        )}
-
-        <h1 style={{ fontSize: "40px", fontWeight: 800, margin: stack.length > 0 ? "10px 0 4px" : "0 0 4px", textAlign: "center" }}>
+        <h1
+          style={{
+            fontSize: "40px",
+            fontWeight: 800,
+            margin: stack.length > 0 ? "10px 0 4px" : "0 0 4px",
+            textAlign: "center",
+          }}
+        >
           {activeCategory ? activeCategory.label : "Le Pôle Expert"}
         </h1>
-        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: 0, textAlign: "center" }}>
-          {current?.type === "item" ? current.data.label : "Qualité, Performance et Satisfaction Client"}
+        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: 0,textAlign: "center" }}>
+          {current?.type === "item" || current?.type === "subcategory"
+            ? current.data.label
+            : "Qualité, Performance et Satisfaction Client"}
         </p>
-
-        <img src={imagePoleExpert} alt="Illustration Pôle Expert" style={{ display: "block", margin: "10px auto 0", height: "200px", width: "auto" }} />
+        
+        <img 
+          src={imagePoleExpert} 
+          alt="Illustration Pôle Expert" 
+          style={{
+            display: "block",
+            margin: "10px auto 0", 
+            height: "200px",       
+            width: "auto"
+          }} 
+        />
 
         {stack.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "14px", fontSize: "12px", opacity: 0.85 }}>
-            <span style={{ cursor: "pointer" }} onClick={goHome}>Accueil</span>
-            {stack.map((s, i) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ opacity: 0.6 }}>/</span>
-                <span>{s.data.label}</span>
-              </span>
-            ))}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              marginTop: "14px",
+              fontSize: "12px",
+              opacity: 0.85,
+            }}
+          >
+            <span style={{ cursor: "pointer" }} onClick={goHome}>
+              Accueil
+            </span>
+            {stack.map((s, i) => {
+              const isLast = i === stack.length - 1;
+              return (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ opacity: 0.6 }}>/</span>
+                  <span
+                    style={{
+                      cursor: isLast ? "default" : "pointer",
+                      opacity: isLast ? 1 : 0.8,
+                    }}
+                    onClick={() => {
+                      if (!isLast) {
+                        setStack((prev) => prev.slice(0, i + 1));
+                      }
+                    }}
+                  >
+                    {s.data.label}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         )}
       </section>
 
       <main style={{ flex: 1, padding: "40px 24px" }}>
-        {!current && <MainMenu onSelect={(cat) => push({ type: "category", data: cat })} />}
-        {current?.type === "category" && <SubMenu category={current.data} onSelect={(item) => push({ type: "item", data: item })} />}
-        {current?.type === "item" && <DetailPage category={activeCategory} item={current.data} />}
+        {!current && (
+          <MainMenu
+            onSelect={(cat) =>
+              push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })
+            }
+          />
+        )}
+
+        {(current?.type === "category" || current?.type === "subcategory") && (
+          <SubMenu
+            category={current.data}
+            onSelect={(item) =>
+              push(
+                item.items
+                  ? { type: "subcategory", data: item }
+                  : { type: "item", data: item }
+              )
+            }
+          />
+        )}
+
+        {current?.type === "item" && (
+          <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />
+        )}
       </main>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 1 — MENU PRINCIPAL
-// ---------------------------------------------------------------------------
 function MainMenu({ onSelect }) {
   return (
     <div style={gridStyle}>
       {CATEGORIES.map((cat) => (
-        <Card key={cat.id} icon={cat.icon} image={cat.image} label={cat.label} description={cat.description} onClick={() => onSelect(cat)} />
+        <Card
+          key={cat.id}
+          icon={cat.icon}
+          image={cat.image}
+          label={cat.label}
+          description={cat.description}
+          onClick={() => onSelect(cat)}
+        />
       ))}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 2 — SOUS-MENU
-// ---------------------------------------------------------------------------
 function SubMenu({ category, onSelect }) {
   const [query, setQuery] = useState("");
-  const filteredItems = category.items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
+
+  const filteredItems = category.items.filter((item) =>
+    item.label.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <div>
       {category.searchable && (
         <div style={searchWrapStyle}>
           <Search size={18} color={COLORS.textMuted} />
-          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher..." style={searchInputStyle} />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Rechercher..."
+            style={searchInputStyle}
+          />
         </div>
       )}
 
       <div style={gridStyle}>
         {filteredItems.map((item) => (
-          <Card key={item.id} icon={item.icon} image={item.image} label={item.label} iconColor={category.itemIconColor} onClick={() => onSelect(item)} />
+          <Card
+            key={item.id}
+            icon={item.icon}
+            image={item.image}
+            label={item.label}
+            iconColor={category.itemIconColor}
+            onClick={() => onSelect(item)}
+          />
         ))}
       </div>
 
       {category.searchable && filteredItems.length === 0 && (
-        <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>Aucun résultat pour « {query} ».</p>
+        <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>
+          Aucun résultat pour « {query} ».
+        </p>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 3 — PAGE FINALE (Modifiée avec Menu Déroulant et Image Produit)
-// ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
   const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
   const [driveDocuments, setDriveDocuments] = useState([]);
@@ -366,18 +449,34 @@ function DetailPage({ category, item }) {
 
   const documents = item.driveFolderId ? driveDocuments : localDocuments;
 
+  const [showExpertForm, setShowExpertForm] = useState(false);
+
+  const handleViewSelected = () => {
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (doc) setViewingDoc(doc);
+  };
+
   return (
     <div style={{ maxWidth: "480px" }}>
-      <div style={{ marginBottom: "18px" }}>
-        {item.image ? (
-          <img src={item.image} alt={item.label} style={{ width: "100px", height: "auto", objectFit: "contain" }} />
-        ) : (
-          <div style={{ display: "inline-flex", padding: "16px", borderRadius: "14px", background: "#FBF1D9" }}>
-            <item.icon size={30} color={COLORS.gold} />
-          </div>
-        )}
-      </div>
-
+      {item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          style={{ width: 100, height: 100, objectFit: "contain", marginBottom: "18px" }}
+        />
+      ) : (
+        <div
+          style={{
+            display: "inline-flex",
+            padding: "16px",
+            borderRadius: "14px",
+            background: "#FBF1D9",
+            marginBottom: "18px",
+          }}
+        >
+          <item.icon size={30} color={COLORS.gold} />
+        </div>
+      )}
       <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px" }}>{item.label}</h2>
       <p style={{ color: COLORS.textMuted, fontSize: "14px", lineHeight: 1.6, marginBottom: "22px" }}>
         Voici la page de destination pour « {item.label} », dans la catégorie « {category.label} ».
@@ -385,81 +484,328 @@ function DetailPage({ category, item }) {
       </p>
 
       <div>
-        <h3 style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>
+        <h3
+          style={{
+            fontSize: "12px",
+            textTransform: "uppercase",
+            letterSpacing: "0.06em",
+            color: COLORS.textMuted,
+            marginBottom: "10px",
+          }}
+        >
           Notice d'utilisation
         </h3>
 
         {loading && <p style={{ fontSize: "13px", color: COLORS.textMuted }}>Chargement…</p>}
+
         {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
 
         {!loading && !error && documents.length === 0 && (
-          <p style={{ fontSize: "13px", color: COLORS.textMuted }}>
-            {item.driveFolderId
-              ? "Aucun document dans ce dossier Drive pour l'instant."
-              : <>Aucun document dans <code>src/documents/{item.id}/</code> pour l'instant.</>}
+          <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>
+            Aucun document disponible pour le moment.
           </p>
         )}
 
         {!loading && !error && documents.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", gap: "8px" }}>
             <select
               value={selectedDocId}
               onChange={(e) => setSelectedDocId(e.target.value)}
-              style={{
-                padding: "12px 14px",
-                borderRadius: "8px",
-                border: `1px solid ${COLORS.cardBorder}`,
-                fontSize: "14px",
-                color: COLORS.navy,
-                background: "#FFFFFF",
-                outline: "none",
-                cursor: "pointer",
-                width: "100%"
-              }}
+              style={selectStyle}
             >
-              <option value="" disabled>Sélectionnez un document...</option>
+              <option value="">Choisir un document…</option>
               {documents.map((doc) => (
-                <option key={doc.id} value={doc.id}>{doc.name}</option>
+                <option key={doc.id} value={doc.id}>
+                  {doc.name}
+                </option>
               ))}
             </select>
-
             <button
-              onClick={() => {
-                const docToView = documents.find(d => d.id === selectedDocId);
-                if (docToView) setViewingDoc(docToView);
-              }}
+              onClick={handleViewSelected}
               disabled={!selectedDocId}
               style={{
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-                padding: "12px",
-                borderRadius: "8px",
-                border: "none",
-                background: selectedDocId ? COLORS.gold : "#E0E0E0",
+                gap: "6px",
+                background: selectedDocId ? COLORS.gold : "#EFEFEC",
                 color: selectedDocId ? COLORS.navy : COLORS.textMuted,
-                fontWeight: 600,
-                fontSize: "14px",
-                cursor: selectedDocId ? "pointer" : "not-allowed",
-                transition: "background-color 0.2s"
+                border: "none",
+                borderRadius: "10px",
+                padding: "0 18px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: selectedDocId ? "pointer" : "default",
+                whiteSpace: "nowrap",
               }}
             >
-              <Eye size={18} />
-              Consulter le document
+              <Eye size={16} />
+              Afficher
             </button>
           </div>
         )}
       </div>
 
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "28px" }}>
+        <button
+          onClick={() => setShowExpertForm(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: COLORS.gold,
+            color: COLORS.navy,
+            border: "none",
+            borderRadius: "10px",
+            padding: "14px 20px",
+            fontSize: "13px",
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            cursor: "pointer",
+          }}
+        >
+          Une question ? Contactez nos experts
+          <ArrowRight size={16} />
+        </button>
+      </div>
+
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+
+      {showExpertForm && (
+        <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// VISIONNEUSE PDF EN LECTURE SEULE
-// ---------------------------------------------------------------------------
+function ExpertRequestForm({ item, category, onClose }) {
+  const [form, setForm] = useState({
+    nom: "",
+    prenom: "",
+    email: "",
+    machine: "",
+    numeroSerie: "",
+    reference: "",
+    sujet: "Support Technique",
+    message: "",
+  });
+  const [fileName, setFileName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [sent, setSent] = useState(false);
+
+  const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, "expertRequests"), {
+        ...form,
+        pieceJointeNom: fileName || null,
+        produit: item.label,
+        categorie: category?.label || null,
+        requestedBy: auth.currentUser?.email || null,
+        createdAt: serverTimestamp(),
+      });
+
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          nom: form.nom,
+          prenom: form.prenom,
+          email: form.email,
+          machine: form.machine,
+          numeroSerie: form.numeroSerie,
+          reference: form.reference,
+          sujet: form.sujet,
+          message: form.message,
+          produit: item.label,
+          categorie: category?.label || "",
+          pieceJointe: fileName || "Aucune",
+        }),
+      });
+
+      setSent(true);
+    } catch {
+      setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(11,31,58,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          maxWidth: "480px",
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "auto",
+          padding: "28px",
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Fermer"
+          style={{
+            position: "absolute",
+            top: "16px",
+            right: "16px",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: COLORS.textMuted,
+          }}
+        >
+          <X size={20} />
+        </button>
+
+        {sent ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>
+              Demande envoyée
+            </h2>
+            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>
+              Un expert vous répondra dans les meilleurs délais.
+            </p>
+            <button onClick={onClose} style={primaryBtnStyle}>
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>
+              Nouvelle Demande d'Expertise
+            </h2>
+
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input required placeholder="Nom" value={form.nom} onChange={update("nom")} style={formInputStyle} />
+              <input required placeholder="Prénom" value={form.prenom} onChange={update("prenom")} style={formInputStyle} />
+              <input required type="email" placeholder="E-mail" value={form.email} onChange={update("email")} style={formInputStyle} />
+
+              <FieldWithTooltip
+                placeholder="Machine"
+                value={form.machine}
+                onChange={update("machine")}
+                tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)."
+              />
+              <FieldWithTooltip
+                placeholder="N° Série"
+                value={form.numeroSerie}
+                onChange={update("numeroSerie")}
+                tooltip="Le numéro de série figure sur la plaque signalétique de la machine."
+              />
+              <FieldWithTooltip
+                placeholder="Référence"
+                value={form.reference}
+                onChange={update("reference")}
+                tooltip="Une référence interne de commande ou de dossier, si vous en avez une."
+              />
+
+              <select required value={form.sujet} onChange={update("sujet")} style={formInputStyle}>
+                <option>Support Technique</option>
+                <option>Garantie</option>
+                <option>Pièces détachées</option>
+                <option>Formation</option>
+              </select>
+
+              <textarea
+                required
+                placeholder="Votre message..."
+                value={form.message}
+                onChange={update("message")}
+                rows={4}
+                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+
+              <div>
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Paperclip size={14} />
+                  Pièce jointe (optionnel)
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
+                  style={{ fontSize: "13px" }}
+                />
+              </div>
+
+              {error && <p style={{ color: "#C0392B", fontSize: "13px" }}>{error}</p>}
+
+              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>
+                {submitting ? "Envoi…" : "Envoyer"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FieldWithTooltip({ tooltip, ...inputProps }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input required {...inputProps} style={{ ...formInputStyle, paddingRight: "36px" }} />
+      <span
+        title={tooltip}
+        style={{
+          position: "absolute",
+          right: "10px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: COLORS.textMuted,
+          cursor: "help",
+          display: "flex",
+        }}
+      >
+        <HelpCircle size={16} />
+      </span>
+    </div>
+  );
+}
+
+const formInputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "8px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  fontSize: "14px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const primaryBtnStyle = {
+  background: COLORS.gold,
+  color: COLORS.navy,
+  border: "none",
+  borderRadius: "10px",
+  padding: "14px 20px",
+  fontSize: "13px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -474,14 +820,33 @@ function PdfViewer({ doc, onClose }) {
   }, []);
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.85)", display: "flex", flexDirection: "column", zIndex: 1000 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: COLORS.navy, color: "#FFFFFF" }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(11,31,58,0.85)",
+        display: "flex",
+        flexDirection: "column",
+        zIndex: 1000,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "14px 20px",
+          background: COLORS.navy,
+          color: "#FFFFFF",
+        }}
+      >
         <span style={{ fontSize: "14px", fontWeight: 600 }}>{doc.name}</span>
 
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
           <button
             onClick={() => setShowOutline((s) => !s)}
             style={{ ...navBtnStyle, background: showOutline ? COLORS.gold : "rgba(255,255,255,0.15)" }}
+            aria-label="Afficher les signets"
             title="Signets"
           >
             <PanelLeft size={16} color={showOutline ? COLORS.navy : "#FFFFFF"} />
@@ -489,21 +854,43 @@ function PdfViewer({ doc, onClose }) {
 
           {numPages && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
-              <button onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1} style={navBtnStyle}>
+              <button
+                onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
+                disabled={pageNumber <= 1}
+                style={navBtnStyle}
+                aria-label="Page précédente"
+              >
                 <ChevronLeft size={16} />
               </button>
-              <span>Page {pageNumber} / {numPages}</span>
-              <button onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages} style={navBtnStyle}>
+              <span>
+                Page {pageNumber} / {numPages}
+              </span>
+              <button
+                onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
+                disabled={pageNumber >= numPages}
+                style={navBtnStyle}
+                aria-label="Page suivante"
+              >
                 <ChevronRight size={16} />
               </button>
             </div>
           )}
 
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button onClick={() => setRotation((r) => (r - 90 + 360) % 360)} style={navBtnStyle} title="Pivoter à gauche">
+            <button
+              onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
+              style={navBtnStyle}
+              aria-label="Pivoter vers la gauche"
+              title="Pivoter à gauche"
+            >
               <RotateCcw size={16} />
             </button>
-            <button onClick={() => setRotation((r) => (r + 90) % 360)} style={navBtnStyle} title="Pivoter à droite">
+            <button
+              onClick={() => setRotation((r) => (r + 90) % 360)}
+              style={navBtnStyle}
+              aria-label="Pivoter vers la droite"
+              title="Pivoter à droite"
+            >
               <RotateCw size={16} />
             </button>
           </div>
@@ -523,19 +910,59 @@ function PdfViewer({ doc, onClose }) {
           error={<p style={{ color: "#FFFFFF", padding: "24px" }}>Impossible d'afficher ce PDF.</p>}
         >
           <div style={{ display: "flex", flex: 1, height: "100%" }}>
-            {showOutline && (
-              <div style={{ width: "260px", flexShrink: 0, overflow: "auto", background: "#FFFFFF", borderRight: `1px solid ${COLORS.cardBorder}`, padding: "16px" }}>
-                <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>
-                  Signets
-                </h4>
-                <Outline onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))} onItemClick={({ pageNumber: pn }) => setPageNumber(pn)} />
-                {!hasOutline && <p style={{ fontSize: "12px", color: COLORS.textMuted }}>Ce PDF ne contient pas de signets.</p>}
-              </div>
-            )}
-
-            <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", padding: "24px", background: "#5A5A5A" }}>
-              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(900, window.innerWidth - (showOutline ? 340 : 80))} />
+          {showOutline && (
+            <div
+              style={{
+                width: "260px",
+                flexShrink: 0,
+                overflow: "auto",
+                background: "#FFFFFF",
+                borderRight: `1px solid ${COLORS.cardBorder}`,
+                padding: "16px",
+              }}
+            >
+              <h4
+                style={{
+                  fontSize: "11px",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: COLORS.textMuted,
+                  marginBottom: "10px",
+                }}
+              >
+                Signets
+              </h4>
+              <Outline
+                onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))}
+                onItemClick={({ pageNumber: pn }) => setPageNumber(pn)}
+              />
+              {!hasOutline && (
+                <p style={{ fontSize: "12px", color: COLORS.textMuted }}>
+                  Ce PDF ne contient pas de signets.
+                </p>
+              )}
             </div>
+          )}
+
+          <div
+            onContextMenu={(e) => e.preventDefault()}
+            style={{
+              flex: 1,
+              overflow: "auto",
+              display: "flex",
+              justifyContent: "center",
+              padding: "24px",
+              background: "#5A5A5A",
+            }}
+          >
+            <Page
+              pageNumber={pageNumber}
+              rotate={rotation}
+              renderAnnotationLayer={false}
+              renderTextLayer={false}
+              width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))}
+            />
+          </div>
           </div>
         </Document>
       </div>
@@ -543,9 +970,6 @@ function PdfViewer({ doc, onClose }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// COMPOSANT CARD
-// ---------------------------------------------------------------------------
 function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   return (
     <button
@@ -577,8 +1001,11 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
       }}
     >
       {image ? (
-        // Les dimensions sont réduites d'un tiers (passant de 220 à 146, et de 200 à 133)
-        <img src={image} alt="" style={{ width: description ? 146 : 133, height: description ? 146 : 133, objectFit: "contain" }} />
+        <img
+          src={image}
+          alt=""
+          style={{ width: description ? 220 : 200, height: description ? 220 : 200, objectFit: "contain" }}
+        />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
       )}
@@ -586,15 +1013,16 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <div style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em", textTransform: description ? "uppercase" : "none" }}>
           {label}
         </div>
-        {description && <div style={{ fontSize: "12.5px", color: COLORS.textMuted, marginTop: "6px" }}>{description}</div>}
+        {description && (
+          <div style={{ fontSize: "12.5px", color: COLORS.textMuted, marginTop: "6px" }}>
+            {description}
+          </div>
+        )}
       </div>
     </button>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN DE CONNEXION
-// ---------------------------------------------------------------------------
 function LoginScreen({ kickedOut }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -636,22 +1064,78 @@ function LoginScreen({ kickedOut }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "20px", background: COLORS.bg, fontFamily: "'Inter', system-ui, sans-serif", padding: "20px" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "20px",
+        background: COLORS.bg,
+        fontFamily: "'Inter', system-ui, sans-serif",
+        padding: "20px",
+      }}
+    >
       <img src={logo} alt="Kaeser Compresseurs" style={{ height: "70px", width: "auto" }} />
 
-      {kickedOut && <p style={alertStyle}>Vous avez été déconnecté(e) car ce compte a été utilisé sur un autre appareil.</p>}
-      {resetSent && <p style={{ ...alertStyle, background: "#EAF7EE", color: "#1E7A34" }}>E-mail envoyé — suivez le lien reçu pour définir votre mot de passe, puis revenez vous connecter ici.</p>}
+      {kickedOut && (
+        <p style={alertStyle}>
+          Vous avez été déconnecté(e) car ce compte a été utilisé sur un autre appareil.
+        </p>
+      )}
+
+      {resetSent && (
+        <p style={{ ...alertStyle, background: "#EAF7EE", color: "#1E7A34" }}>
+          E-mail envoyé — suivez le lien reçu pour définir votre mot de passe, puis revenez vous connecter ici.
+        </p>
+      )}
+
       {error && <p style={alertStyle}>{error}</p>}
 
-      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "320px" }}>
-        <input type="email" placeholder="votre.email@kaeser.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={inputStyle} />
-        <input type="password" placeholder="Mot de passe" value={password} onChange={(e) => setPassword(e.target.value)} required style={inputStyle} />
-        <button type="submit" disabled={loading} style={{ background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 28px", fontSize: "14px", fontWeight: 700, cursor: loading ? "default" : "pointer", opacity: loading ? 0.7 : 1 }}>
+      <form
+        onSubmit={handleSubmit}
+        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "320px" }}
+      >
+        <input
+          type="email"
+          placeholder="votre.email@kaeser.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          style={inputStyle}
+        />
+        <input
+          type="password"
+          placeholder="Mot de passe"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          style={inputStyle}
+        />
+        <button
+          type="submit"
+          disabled={loading}
+          style={{
+            background: COLORS.gold,
+            color: COLORS.navy,
+            border: "none",
+            borderRadius: "10px",
+            padding: "14px 28px",
+            fontSize: "14px",
+            fontWeight: 700,
+            cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.7 : 1,
+          }}
+        >
           {loading ? "Connexion…" : "Se connecter"}
         </button>
       </form>
 
-      <button onClick={handleForgotPassword} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}>
+      <button
+        onClick={handleForgotPassword}
+        style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}
+      >
         Mot de passe oublié / première connexion
       </button>
 
@@ -662,9 +1146,6 @@ function LoginScreen({ kickedOut }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// STYLES PARTAGÉS
-// ---------------------------------------------------------------------------
 const alertStyle = {
   background: "#FBE9E7",
   color: "#C0392B",
@@ -714,6 +1195,17 @@ const searchInputStyle = {
   background: "transparent",
 };
 
+const selectStyle = {
+  flex: 1,
+  padding: "0 14px",
+  height: "42px",
+  borderRadius: "10px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  background: "#FFFFFF",
+  color: COLORS.navy,
+  fontSize: "13px",
+};
+
 const navBtnStyle = {
   display: "flex",
   alignItems: "center",
@@ -736,18 +1228,5 @@ const closeBtnStyle = {
   fontSize: "13px",
   cursor: "pointer",
   padding: "6px 12px",
-  borderRadius: "8px",
-};
-
-const backBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "4px",
-  background: "rgba(255,255,255,0.15)",
-  border: "none",
-  color: "#FFFFFF",
-  fontSize: "13px",
-  cursor: "pointer",
-  padding: "6px 10px",
   borderRadius: "8px",
 };
