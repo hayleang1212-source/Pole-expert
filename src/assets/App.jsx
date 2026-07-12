@@ -1,4 +1,4 @@
-  import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Document, Page, Outline, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
@@ -9,14 +9,20 @@ import {
   signOut,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
+
+// URL de votre application Web Google Apps Script (voir script.google.com
+// → Déployer → Nouveau déploiement → Application Web). Le destinataire
+// (hay.leang@kaeser.com) est défini directement dans le script, pas ici.
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
   Search, PackageSearch, ClipboardList, BookOpen, Video, Award,
   FileText, Server, Wind, Gauge, Truck, Disc,
   MonitorSmartphone, Cpu, SlidersHorizontal, Thermometer, Droplet,
-  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw
+  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw, Settings, HelpCircle,
+  ArrowRight, Paperclip
 } from "lucide-react";
 
 // pdf.js a besoin d'un "worker" (un script séparé qui fait le rendu en
@@ -28,6 +34,19 @@ import iconSupportTechnique from "./assets/Support.png";
 import iconGarantie from "./assets/Garantie.png";
 import iconPiecesDetachees from "./assets/Pièces.png";
 import iconFormation from "./assets/Formation.png";
+import imgCompresseur from "./assets/Compresseur.png";
+import imgVisSeche from "./assets/Vis sèche.png";
+import imgSurpresseur from "./assets/Surpresseur.png";
+import imgMobilair from "./assets/Mobilair.png";
+import imgPiston from "./assets/Piston.png";
+import imgTraitement from "./assets/Traitement.png";
+import imgSigmaControl from "./assets/Sigma control.png";
+import imgSAM from "./assets/SAM.png";
+import imgVariateur from "./assets/Variateur.png";
+import imgInstruments from "./assets/Instruments.png";
+import imgHuile from "./assets/Huile.png";
+import imgAda from "./assets/Ada.png";
+import imgBelimo from "./assets/BELIMO.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
@@ -113,19 +132,26 @@ const CATEGORIES = [
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
-      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
-      { id: "vis-seche", label: "Vis sèche", icon: Server },
-      { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge },
-      { id: "mobilair", label: "Mobilair", icon: Truck },
-      { id: "piston", label: "Piston", icon: Disc },
-      { id: "traitement-air", label: "Traitement d'air", icon: Wind },
-      { id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone },
-      { id: "sam-40", label: "SAM 4.0", icon: Cpu },
-      { id: "variateur", label: "Variateur", icon: SlidersHorizontal },
-      { id: "instruments", label: "Instruments", icon: Thermometer },
-      { id: "huile", label: "Huile", icon: Droplet },
-      { id: "ada", label: "ADA", icon: Component },
-      { id: "belimo", label: "BELIMO", icon: PlugZap },
+      {
+        id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur,
+        items: [
+          { id: "sc2-vis", label: "Compresseur SC2", icon: Settings, image: imgCompresseur, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+          { id: "sc3-vis", label: "Compresseur SC3", icon: Settings, image: imgCompresseur, driveFolderId: "19Z-TuSJgRa3Aq3btywU2AsdT746WJwtX" },
+          { id: "scb-vis", label: "Compresseur SCB", icon: Settings, image: imgCompresseur, driveFolderId: "1PqDpXZQGdGXvwpV421WyY9scanMmCQhC" },
+        ],
+      },
+      { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
+      { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
+      { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
+      { id: "piston", label: "Piston", icon: Disc, image: imgPiston },
+      { id: "traitement-air", label: "Traitement d'air", icon: Wind, image: imgTraitement },
+      { id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone, image: imgSigmaControl },
+      { id: "sam-40", label: "SAM 4.0", icon: Cpu, image: imgSAM },
+      { id: "variateur", label: "Variateur", icon: SlidersHorizontal, image: imgVariateur },
+      { id: "instruments", label: "Instruments", icon: Thermometer, image: imgInstruments },
+      { id: "huile", label: "Huile", icon: Droplet, image: imgHuile },
+      { id: "ada", label: "ADA", icon: Component, image: imgAda },
+      { id: "belimo", label: "BELIMO", icon: PlugZap, image: imgBelimo },
     ],
   },
   {
@@ -294,13 +320,6 @@ export default function App() {
           justifyContent: "center",
         }}
       >
-        {stack.length > 0 && (
-          <button onClick={pop} style={backBtnStyle} aria-label="Retour">
-            <ChevronLeft size={18} />
-            Retour
-          </button>
-        )}
-
         <h1
           style={{
             fontSize: "40px",
@@ -312,62 +331,91 @@ export default function App() {
           {activeCategory ? activeCategory.label : "Le Pôle Expert"}
         </h1>
         <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: 0,textAlign: "center" }}>
-          {current?.type === "item"
+          {current?.type === "item" || current?.type === "subcategory"
             ? current.data.label
             : "Qualité, Performance et Satisfaction Client"}
         </p>
         
-        {!activeCategory && (
-          <img 
-            src={imagePoleExpert} 
-            alt="Illustration Pôle Expert" 
-            style={{
-              display: "block",
-              margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
-              height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
-              width: "auto"
-            }} 
-          />
-        )}
+        <img 
+          src={imagePoleExpert} 
+          alt="Illustration Pôle Expert" 
+          style={{
+            display: "block",
+            margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
+            height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
+            width: "auto"
+          }} 
+        />
 
-        {/* fil d'ariane discret */}
+        {/* fil d'ariane cliquable */}
         {stack.length > 0 && (
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: "6px",
+              gap: "10px",
               marginTop: "14px",
-              fontSize: "12px",
+              fontSize: "18px",
               opacity: 0.85,
             }}
           >
             <span style={{ cursor: "pointer" }} onClick={goHome}>
               Accueil
             </span>
-            {stack.map((s, i) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ opacity: 0.6 }}>/</span>
-                <span>{s.data.label}</span>
-              </span>
-            ))}
+            {stack.map((s, i) => {
+              const isLast = i === stack.length - 1;
+              return (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <span style={{ opacity: 0.6 }}>/</span>
+                  <span
+                    style={{
+                      cursor: isLast ? "default" : "pointer",
+                      opacity: 1,
+                      background: isLast ? COLORS.gold : "transparent",
+                      color: isLast ? COLORS.navy : "inherit",
+                      borderRadius: isLast ? "8px" : 0,
+                      padding: isLast ? "2px 10px" : 0,
+                    }}
+                    onClick={() => {
+                      if (!isLast) {
+                        setStack((prev) => prev.slice(0, i + 1));
+                      }
+                    }}
+                  >
+                    {s.data.label}
+                  </span>
+                </span>
+              );
+            })}
           </div>
         )}
       </section>
 
       {/* ---------- CONTENU ---------- */}
       <main style={{ flex: 1, padding: "40px 24px" }}>
-        {!current && <MainMenu onSelect={(cat) => push({ type: "category", data: cat })} />}
+        {!current && (
+          <MainMenu
+            onSelect={(cat) =>
+              push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })
+            }
+          />
+        )}
 
-        {current?.type === "category" && (
+        {(current?.type === "category" || current?.type === "subcategory") && (
           <SubMenu
             category={current.data}
-            onSelect={(item) => push({ type: "item", data: item })}
+            onSelect={(item) =>
+              push(
+                item.items
+                  ? { type: "subcategory", data: item }
+                  : { type: "item", data: item }
+              )
+            }
           />
         )}
 
         {current?.type === "item" && (
-          <DetailPage category={activeCategory} item={current.data} />
+          <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />
         )}
       </main>
     </div>
@@ -442,7 +490,7 @@ function SubMenu({ category, onSelect }) {
 }
 
 // ---------------------------------------------------------------------------
-// ÉCRAN 3 — PAGE FINALE (contenu réel + bouton retour déjà dans le bandeau)
+// ÉCRAN 3 — PAGE FINALE (contenu réel)
 // ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
   const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
@@ -450,10 +498,8 @@ function DetailPage({ category, item }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewingDoc, setViewingDoc] = useState(null);
+  const [selectedDocId, setSelectedDocId] = useState("");
 
-  // Si l'item a un dossier Drive associé, on interroge directement l'API
-  // Drive avec la clé API (le dossier doit être partagé "avec le lien").
-  // Sinon, on utilise les PDF locaux détectés dans src/documents/.
   useEffect(() => {
     if (!item.driveFolderId) return;
 
@@ -468,19 +514,34 @@ function DetailPage({ category, item }) {
 
   const documents = item.driveFolderId ? driveDocuments : localDocuments;
 
+  const [showExpertForm, setShowExpertForm] = useState(false);
+
+  const handleViewSelected = () => {
+    const doc = documents.find((d) => d.id === selectedDocId);
+    if (doc) setViewingDoc(doc);
+  };
+
   return (
     <div style={{ maxWidth: "480px" }}>
-      <div
-        style={{
-          display: "inline-flex",
-          padding: "16px",
-          borderRadius: "14px",
-          background: "#FBF1D9",
-          marginBottom: "18px",
-        }}
-      >
-        <item.icon size={30} color={COLORS.gold} />
-      </div>
+      {item.image ? (
+        <img
+          src={item.image}
+          alt=""
+          style={{ width: 100, height: 100, objectFit: "contain", marginBottom: "18px" }}
+        />
+      ) : (
+        <div
+          style={{
+            display: "inline-flex",
+            padding: "16px",
+            borderRadius: "14px",
+            background: "#FBF1D9",
+            marginBottom: "18px",
+          }}
+        >
+          <item.icon size={30} color={COLORS.gold} />
+        </div>
+      )}
       <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px" }}>{item.label}</h2>
       <p style={{ color: COLORS.textMuted, fontSize: "14px", lineHeight: 1.6, marginBottom: "22px" }}>
         Voici la page de destination pour « {item.label} », dans la catégorie « {category.label} ».
@@ -505,55 +566,318 @@ function DetailPage({ category, item }) {
         {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
 
         {!loading && !error && documents.length === 0 && (
-          <p style={{ fontSize: "13px", color: COLORS.textMuted }}>
-            {item.driveFolderId
-              ? "Aucun document dans ce dossier Drive pour l'instant."
-              : <>Aucun document dans <code>src/documents/{item.id}/</code> pour l'instant.</>}
+          <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>
+            Aucun document disponible pour le moment.
           </p>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {documents.map((doc) => (
-            <button
-              key={doc.id}
-              onClick={() => setViewingDoc(doc)}
-              style={docLinkStyle}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.gold)}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.cardBorder)}
+        {!loading && !error && documents.length > 0 && (
+          <div style={{ display: "flex", gap: "8px" }}>
+            <select
+              value={selectedDocId}
+              onChange={(e) => setSelectedDocId(e.target.value)}
+              style={selectStyle}
             >
-              <FileText size={18} color={COLORS.gold} />
-              <span style={{ flex: 1, fontSize: "13px", textAlign: "left" }}>{doc.name}</span>
-              <Eye size={14} color={COLORS.textMuted} />
+              <option value="">Choisir un document…</option>
+              {documents.map((doc) => (
+                <option key={doc.id} value={doc.id}>
+                  {doc.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleViewSelected}
+              disabled={!selectedDocId}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                background: selectedDocId ? COLORS.gold : "#EFEFEC",
+                color: selectedDocId ? COLORS.navy : COLORS.textMuted,
+                border: "none",
+                borderRadius: "10px",
+                padding: "0 18px",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: selectedDocId ? "pointer" : "default",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Eye size={16} />
+              Afficher
             </button>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* ---------- VISIONNEUSE PDF EN LECTURE SEULE ---------- */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "28px" }}>
+        <button
+          onClick={() => setShowExpertForm(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: COLORS.gold,
+            color: COLORS.navy,
+            border: "none",
+            borderRadius: "10px",
+            padding: "14px 20px",
+            fontSize: "13px",
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            cursor: "pointer",
+          }}
+        >
+          Une question ? Contactez nos experts
+          <ArrowRight size={16} />
+        </button>
+      </div>
+
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+
+      {showExpertForm && (
+        <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />
+      )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Visionneuse PDF : rendu page par page en <canvas> via react-pdf/pdf.js.
-// Comme ce n'est plus le lecteur natif du navigateur, il n'y a aucun
-// bouton "Télécharger" ou "Imprimer" natif — juste l'image de chaque page.
-// Le clic droit est désactivé pour bloquer le "Enregistrer l'image sous...".
-// Note honnête : ceci dissuade un usage courant, mais n'empêche pas un
-// utilisateur déterminé (capture d'écran, outils développeur) — il n'y a
-// pas de verrou 100% infranchissable pour un contenu affiché à l'écran.
-// ---------------------------------------------------------------------------
+function ExpertRequestForm({ item, category, onClose }) {
+  const [form, setForm] = useState({
+    nom: "",
+    prenom: "",
+    email: "",
+    machine: "",
+    numeroSerie: "",
+    reference: "",
+    sujet: "Support Technique",
+    message: "",
+  });
+  const [fileName, setFileName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [sent, setSent] = useState(false);
+
+  const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, "expertRequests"), {
+        ...form,
+        pieceJointeNom: fileName || null,
+        produit: item.label,
+        categorie: category?.label || null,
+        requestedBy: auth.currentUser?.email || null,
+        createdAt: serverTimestamp(),
+      });
+
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          nom: form.nom,
+          prenom: form.prenom,
+          email: form.email,
+          machine: form.machine,
+          numeroSerie: form.numeroSerie,
+          reference: form.reference,
+          sujet: form.sujet,
+          message: form.message,
+          produit: item.label,
+          categorie: category?.label || "",
+          pieceJointe: fileName || "Aucune",
+        }),
+      });
+
+      setSent(true);
+    } catch {
+      setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(11,31,58,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          maxWidth: "480px",
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "auto",
+          padding: "28px",
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Fermer"
+          style={{
+            position: "absolute",
+            top: "16px",
+            right: "16px",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: COLORS.textMuted,
+          }}
+        >
+          <X size={20} />
+        </button>
+
+        {sent ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>
+              Demande envoyée
+            </h2>
+            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>
+              Un expert vous répondra dans les meilleurs délais.
+            </p>
+            <button onClick={onClose} style={primaryBtnStyle}>
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>
+              Nouvelle Demande d'Expertise
+            </h2>
+
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input required placeholder="Nom" value={form.nom} onChange={update("nom")} style={formInputStyle} />
+              <input required placeholder="Prénom" value={form.prenom} onChange={update("prenom")} style={formInputStyle} />
+              <input required type="email" placeholder="E-mail" value={form.email} onChange={update("email")} style={formInputStyle} />
+
+              <FieldWithTooltip
+                placeholder="Machine"
+                value={form.machine}
+                onChange={update("machine")}
+                tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)."
+              />
+              <FieldWithTooltip
+                placeholder="N° Série"
+                value={form.numeroSerie}
+                onChange={update("numeroSerie")}
+                tooltip="Le numéro de série figure sur la plaque signalétique de la machine."
+              />
+              <FieldWithTooltip
+                placeholder="Référence"
+                value={form.reference}
+                onChange={update("reference")}
+                tooltip="Une référence interne de commande ou de dossier, si vous en avez une."
+              />
+
+              <select required value={form.sujet} onChange={update("sujet")} style={formInputStyle}>
+                <option>Support Technique</option>
+                <option>Garantie</option>
+                <option>Pièces détachées</option>
+                <option>Formation</option>
+              </select>
+
+              <textarea
+                required
+                placeholder="Votre message..."
+                value={form.message}
+                onChange={update("message")}
+                rows={4}
+                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+
+              <div>
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Paperclip size={14} />
+                  Pièce jointe (optionnel)
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
+                  style={{ fontSize: "13px" }}
+                />
+              </div>
+
+              {error && <p style={{ color: "#C0392B", fontSize: "13px" }}>{error}</p>}
+
+              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>
+                {submitting ? "Envoi…" : "Envoyer"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FieldWithTooltip({ tooltip, ...inputProps }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input required {...inputProps} style={{ ...formInputStyle, paddingRight: "36px" }} />
+      <span
+        title={tooltip}
+        style={{
+          position: "absolute",
+          right: "10px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: COLORS.textMuted,
+          cursor: "help",
+          display: "flex",
+        }}
+      >
+        <HelpCircle size={16} />
+      </span>
+    </div>
+  );
+}
+
+const formInputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "8px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  fontSize: "14px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const primaryBtnStyle = {
+  background: COLORS.gold,
+  color: COLORS.navy,
+  border: "none",
+  borderRadius: "10px",
+  padding: "14px 20px",
+  fontSize: "13px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [showOutline, setShowOutline] = useState(true);
-  const [hasOutline, setHasOutline] = useState(true); // optimiste, corrigé après chargement
-  const [rotation, setRotation] = useState(0); // 0, 90, 180, 270
+  const [hasOutline, setHasOutline] = useState(true);
+  const [rotation, setRotation] = useState(0);
 
-  // Blocage du clic droit au niveau du document entier tant que la
-  // visionneuse est ouverte — plus fiable qu'un seul gestionnaire sur
-  // un <div>, car ça couvre aussi les éléments internes de react-pdf.
   useEffect(() => {
     const block = (e) => e.preventDefault();
     document.addEventListener("contextmenu", block);
@@ -701,7 +1025,7 @@ function PdfViewer({ doc, onClose }) {
               rotate={rotation}
               renderAnnotationLayer={false}
               renderTextLayer={false}
-              width={Math.min(900, window.innerWidth - (showOutline ? 340 : 80))}
+              width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))}
             />
           </div>
           </div>
@@ -711,9 +1035,6 @@ function PdfViewer({ doc, onClose }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// COMPOSANT RÉUTILISABLE — une carte cliquable (icône + titre + description)
-// ---------------------------------------------------------------------------
 function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   return (
     <button
@@ -748,7 +1069,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 44 : 38, height: description ? 44 : 38, objectFit: "contain" }}
+          style={{ width: description ? 165 : 150, height: description ? 165 : 150, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
@@ -767,14 +1088,6 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// STYLES PARTAGÉS
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// ÉCRAN DE CONNEXION — affiché tant que l'utilisateur n'est pas authentifié.
-// Ouvre directement le widget Netlify Identity (connexion ou inscription,
-// selon si la personne a déjà été invitée).
-// ---------------------------------------------------------------------------
 function LoginScreen({ kickedOut }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -931,6 +1244,7 @@ const searchWrapStyle = {
   gap: "10px",
   maxWidth: "480px",
   marginLeft: "auto",
+  marginRight: "auto",
   marginBottom: "28px",
   padding: "12px 16px",
   borderRadius: "10px",
@@ -945,6 +1259,17 @@ const searchInputStyle = {
   fontSize: "14px",
   color: COLORS.navy,
   background: "transparent",
+};
+
+const selectStyle = {
+  flex: 1,
+  padding: "0 14px",
+  height: "42px",
+  borderRadius: "10px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  background: "#FFFFFF",
+  color: COLORS.navy,
+  fontSize: "13px",
 };
 
 const docLinkStyle = {
