@@ -24,9 +24,10 @@ import {
 // besoin de le copier dans votre projet.
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
-import Formation from "./assets/Formation.png";
-import Pièces from "./assets/Pièces.png";
-import Support from "./assets/support.png";
+import iconSupportTechnique from "./assets/Suppport.png";
+import iconGarantie from "./assets/Garantie.png";
+import iconPiecesDetachees from "./assets/Pièces.png";
+import iconFormation from "./assets/Formation.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,7 @@ const CATEGORIES = [
     label: "Support technique",
     description: "Documentation et assistance",
     icon: Headset,
+    image: Support,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
@@ -131,6 +133,7 @@ const CATEGORIES = [
     label: "Garantie",
     description: "Enregistrements et demandes",
     icon: ShieldCheck,
+    image: Garantie,
     items: [
       { id: "conditions", label: "Conditions de garantie", icon: FileCheck },
       { id: "duree", label: "Durée de couverture", icon: Clock },
@@ -142,6 +145,7 @@ const CATEGORIES = [
     label: "Pièces détachées",
     description: "Catalogues et références",
     icon: Package,
+    image: Pièces,
     items: [
       { id: "recherche", label: "Rechercher une pièce", icon: Search },
       { id: "catalogue", label: "Catalogue", icon: PackageSearch },
@@ -153,6 +157,7 @@ const CATEGORIES = [
     label: "Formation",
     description: "Modules experts",
     icon: GraduationCap,
+    image: Formation,
     items: [
       { id: "guides", label: "Guides pratiques", icon: BookOpen },
       { id: "videos", label: "Tutoriels vidéo", icon: Video },
@@ -379,6 +384,7 @@ function MainMenu({ onSelect }) {
         <Card
           key={cat.id}
           icon={cat.icon}
+          image={cat.image}
           label={cat.label}
           description={cat.description}
           onClick={() => onSelect(cat)}
@@ -418,6 +424,7 @@ function SubMenu({ category, onSelect }) {
           <Card
             key={item.id}
             icon={item.icon}
+            image={item.image}
             label={item.label}
             iconColor={category.itemIconColor}
             onClick={() => onSelect(item)}
@@ -707,7 +714,7 @@ function PdfViewer({ doc, onClose }) {
 // ---------------------------------------------------------------------------
 // COMPOSANT RÉUTILISABLE — une carte cliquable (icône + titre + description)
 // ---------------------------------------------------------------------------
-function Card({ icon: Icon, label, description, iconColor, onClick }) {
+function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
   return (
     <button
       onClick={onClick}
@@ -737,7 +744,15 @@ function Card({ icon: Icon, label, description, iconColor, onClick }) {
         e.currentTarget.style.boxShadow = "0 1px 3px rgba(11,31,58,0.04)";
       }}
     >
-      <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
+      {image ? (
+        <img
+          src={image}
+          alt=""
+          style={{ width: description ? 44 : 38, height: description ? 44 : 38, objectFit: "contain" }}
+        />
+      ) : (
+        <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
+      )}
       <div>
         <div style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em", textTransform: description ? "uppercase" : "none" }}>
           {label}
