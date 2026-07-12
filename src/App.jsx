@@ -9,14 +9,15 @@ import {
   signOut,
   sendPasswordResetEmail,
 } from "firebase/auth";
-import { doc, setDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
   Search, PackageSearch, ClipboardList, BookOpen, Video, Award,
   FileText, Server, Wind, Gauge, Truck, Disc,
   MonitorSmartphone, Cpu, SlidersHorizontal, Thermometer, Droplet,
-  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw
+  Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw, Settings, HelpCircle,
+  ArrowRight, Paperclip
 } from "lucide-react";
 
 // pdf.js a besoin d'un "worker" (un script séparé qui fait le rendu en
@@ -126,7 +127,14 @@ const CATEGORIES = [
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
-      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+      {
+        id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur,
+        items: [
+          { id: "sc2-vis", label: "SC2 (Vis)", icon: Settings },
+          { id: "sc3-vis", label: "SC3 (Vis)", icon: Settings },
+          { id: "scb-vis", label: "SCB (Vis)", icon: Settings },
+        ],
+      },
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
       { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
       { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
@@ -325,7 +333,7 @@ export default function App() {
           {activeCategory ? activeCategory.label : "Le Pôle Expert"}
         </h1>
         <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: 0,textAlign: "center" }}>
-          {current?.type === "item"
+          {current?.type === "item" || current?.type === "subcategory"
             ? current.data.label
             : "Qualité, Performance et Satisfaction Client"}
         </p>
@@ -368,17 +376,29 @@ export default function App() {
 
       {/* ---------- CONTENU ---------- */}
       <main style={{ flex: 1, padding: "40px 24px" }}>
-        {!current && <MainMenu onSelect={(cat) => push({ type: "category", data: cat })} />}
+        {!current && (
+          <MainMenu
+            onSelect={(cat) =>
+              push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })
+            }
+          />
+        )}
 
-        {current?.type === "category" && (
+        {(current?.type === "category" || current?.type === "subcategory") && (
           <SubMenu
             category={current.data}
-            onSelect={(item) => push({ type: "item", data: item })}
+            onSelect={(item) =>
+              push(
+                item.items
+                  ? { type: "subcategory", data: item }
+                  : { type: "item", data: item }
+              )
+            }
           />
         )}
 
         {current?.type === "item" && (
-          <DetailPage category={activeCategory} item={current.data} />
+          <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />
         )}
       </main>
     </div>
@@ -480,6 +500,8 @@ function DetailPage({ category, item }) {
 
   const documents = item.driveFolderId ? driveDocuments : localDocuments;
 
+  const [showExpertForm, setShowExpertForm] = useState(false);
+
   const handleViewSelected = () => {
     const doc = documents.find((d) => d.id === selectedDocId);
     if (doc) setViewingDoc(doc);
@@ -530,10 +552,8 @@ function DetailPage({ category, item }) {
         {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
 
         {!loading && !error && documents.length === 0 && (
-          <p style={{ fontSize: "13px", color: COLORS.textMuted }}>
-            {item.driveFolderId
-              ? "Aucun document dans ce dossier Drive pour l'instant."
-              : <>Aucun document dans <code>src/documents/{item.id}/</code> pour l'instant.</>}
+          <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>
+            Aucun document disponible pour le moment.
           </p>
         )}
 
@@ -576,8 +596,38 @@ function DetailPage({ category, item }) {
         )}
       </div>
 
+      {/* ---------- BOUTON "CONTACTER NOS EXPERTS" ---------- */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "28px" }}>
+        <button
+          onClick={() => setShowExpertForm(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            background: COLORS.gold,
+            color: COLORS.navy,
+            border: "none",
+            borderRadius: "10px",
+            padding: "14px 20px",
+            fontSize: "13px",
+            fontWeight: 700,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            cursor: "pointer",
+          }}
+        >
+          Une question ? Contactez nos experts
+          <ArrowRight size={16} />
+        </button>
+      </div>
+
       {/* ---------- VISIONNEUSE PDF EN LECTURE SEULE ---------- */}
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+
+      {/* ---------- FORMULAIRE DE DEMANDE D'EXPERTISE ---------- */}
+      {showExpertForm && (
+        <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />
+      )}
     </div>
   );
 }
@@ -591,6 +641,225 @@ function DetailPage({ category, item }) {
 // utilisateur déterminé (capture d'écran, outils développeur) — il n'y a
 // pas de verrou 100% infranchissable pour un contenu affiché à l'écran.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// FORMULAIRE DE DEMANDE D'EXPERTISE — tous les champs sont obligatoires
+// sauf la pièce jointe. À la validation, la demande est enregistrée dans
+// Firestore (collection "expertRequests"), avec l'e-mail de l'utilisateur
+// connecté et le contexte (produit/catégorie) pour la retrouver facilement.
+// Remarque : la pièce jointe n'est pas téléversée (seul son nom est
+// conservé) — l'envoi de fichiers nécessiterait Firebase Storage, non
+// configuré ici.
+// ---------------------------------------------------------------------------
+function ExpertRequestForm({ item, category, onClose }) {
+  const [form, setForm] = useState({
+    nom: "",
+    prenom: "",
+    email: "",
+    machine: "",
+    numeroSerie: "",
+    reference: "",
+    sujet: "Support Technique",
+    message: "",
+  });
+  const [fileName, setFileName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [sent, setSent] = useState(false);
+
+  const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, "expertRequests"), {
+        ...form,
+        pieceJointeNom: fileName || null,
+        produit: item.label,
+        categorie: category?.label || null,
+        requestedBy: auth.currentUser?.email || null,
+        createdAt: serverTimestamp(),
+      });
+      setSent(true);
+    } catch {
+      setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(11,31,58,0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+        padding: "20px",
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          maxWidth: "480px",
+          width: "100%",
+          maxHeight: "90vh",
+          overflow: "auto",
+          padding: "28px",
+          position: "relative",
+        }}
+      >
+        <button
+          onClick={onClose}
+          aria-label="Fermer"
+          style={{
+            position: "absolute",
+            top: "16px",
+            right: "16px",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: COLORS.textMuted,
+          }}
+        >
+          <X size={20} />
+        </button>
+
+        {sent ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>
+              Demande envoyée
+            </h2>
+            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>
+              Un expert vous répondra dans les meilleurs délais.
+            </p>
+            <button onClick={onClose} style={primaryBtnStyle}>
+              Fermer
+            </button>
+          </div>
+        ) : (
+          <>
+            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>
+              Nouvelle Demande d'Expertise
+            </h2>
+
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input required placeholder="Nom" value={form.nom} onChange={update("nom")} style={formInputStyle} />
+              <input required placeholder="Prénom" value={form.prenom} onChange={update("prenom")} style={formInputStyle} />
+              <input required type="email" placeholder="E-mail" value={form.email} onChange={update("email")} style={formInputStyle} />
+
+              <FieldWithTooltip
+                placeholder="Machine"
+                value={form.machine}
+                onChange={update("machine")}
+                tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)."
+              />
+              <FieldWithTooltip
+                placeholder="N° Série"
+                value={form.numeroSerie}
+                onChange={update("numeroSerie")}
+                tooltip="Le numéro de série figure sur la plaque signalétique de la machine."
+              />
+              <FieldWithTooltip
+                placeholder="Référence"
+                value={form.reference}
+                onChange={update("reference")}
+                tooltip="Une référence interne de commande ou de dossier, si vous en avez une."
+              />
+
+              <select required value={form.sujet} onChange={update("sujet")} style={formInputStyle}>
+                <option>Support Technique</option>
+                <option>Garantie</option>
+                <option>Pièces détachées</option>
+                <option>Formation</option>
+              </select>
+
+              <textarea
+                required
+                placeholder="Votre message..."
+                value={form.message}
+                onChange={update("message")}
+                rows={4}
+                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
+
+              <div>
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                  <Paperclip size={14} />
+                  Pièce jointe (optionnel)
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
+                  style={{ fontSize: "13px" }}
+                />
+              </div>
+
+              {error && <p style={{ color: "#C0392B", fontSize: "13px" }}>{error}</p>}
+
+              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>
+                {submitting ? "Envoi…" : "Envoyer"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Petit champ avec une bulle d'aide "?" au survol/focus — évite d'alourdir
+// l'interface avec du texte explicatif permanent sous chaque champ.
+function FieldWithTooltip({ tooltip, ...inputProps }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input required {...inputProps} style={{ ...formInputStyle, paddingRight: "36px" }} />
+      <span
+        title={tooltip}
+        style={{
+          position: "absolute",
+          right: "10px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          color: COLORS.textMuted,
+          cursor: "help",
+          display: "flex",
+        }}
+      >
+        <HelpCircle size={16} />
+      </span>
+    </div>
+  );
+}
+
+const formInputStyle = {
+  width: "100%",
+  padding: "12px 14px",
+  borderRadius: "8px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  fontSize: "14px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const primaryBtnStyle = {
+  background: COLORS.gold,
+  color: COLORS.navy,
+  border: "none",
+  borderRadius: "10px",
+  padding: "14px 20px",
+  fontSize: "13px",
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -748,7 +1017,7 @@ function PdfViewer({ doc, onClose }) {
               rotate={rotation}
               renderAnnotationLayer={false}
               renderTextLayer={false}
-              width={Math.min(900, window.innerWidth - (showOutline ? 340 : 80))}
+              width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))}
             />
           </div>
           </div>
@@ -795,7 +1064,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 147 : 133, height: description ? 147 : 133, objectFit: "contain" }}
+          style={{ width: description ? 220 : 200, height: description ? 220 : 200, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
