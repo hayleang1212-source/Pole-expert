@@ -10,6 +10,11 @@ import {
   sendPasswordResetEmail,
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
+
+// URL de votre application Web Google Apps Script (voir script.google.com
+// → Déployer → Nouveau déploiement → Application Web). Le destinataire
+// (hay.leang@kaeser.com) est défini directement dans le script, pas ici.
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
@@ -130,9 +135,9 @@ const CATEGORIES = [
       {
         id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur,
         items: [
-          { id: "sc2-vis", label: "SC2 (Vis)", icon: Settings },
-          { id: "sc3-vis", label: "SC3 (Vis)", icon: Settings },
-          { id: "scb-vis", label: "SCB (Vis)", icon: Settings },
+          { id: "sc2-vis", label: "Compresseur SC2", icon: Settings, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+          { id: "sc3-vis", label: "Compresseur SC3", icon: Settings, driveFolderId: "19Z-TuSJgRa3Aq3btywU2AsdT746WJwtX" },
+          { id: "scb-vis", label: "Compresseur SCB", icon: Settings, driveFolderId: "1PqDpXZQGdGXvwpV421WyY9scanMmCQhC" },
         ],
       },
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
@@ -681,6 +686,33 @@ function ExpertRequestForm({ item, category, onClose }) {
         requestedBy: auth.currentUser?.email || null,
         createdAt: serverTimestamp(),
       });
+
+      // Envoi de l'e-mail réel au support via Google Apps Script (le
+      // destinataire est défini dans le script lui-même). mode: "no-cors"
+      // est nécessaire pour appeler Apps Script depuis le navigateur sans
+      // configuration CORS côté script — on ne peut donc pas lire la
+      // réponse, mais l'e-mail part normalement si l'URL est correcte.
+      // Une erreur d'envoi n'empêche pas la demande d'être enregistrée
+      // dans Firestore (déjà fait ci-dessus).
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          nom: form.nom,
+          prenom: form.prenom,
+          email: form.email,
+          machine: form.machine,
+          numeroSerie: form.numeroSerie,
+          reference: form.reference,
+          sujet: form.sujet,
+          message: form.message,
+          produit: item.label,
+          categorie: category?.label || "",
+          pieceJointe: fileName || "Aucune",
+        }),
+      });
+
       setSent(true);
     } catch {
       setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
