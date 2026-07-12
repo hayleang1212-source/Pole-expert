@@ -24,7 +24,7 @@ import {
 // besoin de le copier dans votre projet.
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
-import iconSupportTechnique from "./assets/Suppport.png";
+import iconSupportTechnique from "./assets/Support.png";
 import iconGarantie from "./assets/Garantie.png";
 import iconPiecesDetachees from "./assets/Pièces.png";
 import iconFormation from "./assets/Formation.png";
