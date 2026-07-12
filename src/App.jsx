@@ -28,6 +28,18 @@ import iconSupportTechnique from "./assets/Support.png";
 import iconGarantie from "./assets/Garantie.png";
 import iconPiecesDetachees from "./assets/Pièces.png";
 import iconFormation from "./assets/Formation.png";
+import imgCompresseur from "./assets/Compresseur.png";
+import imgVisSeche from "./assets/Vis sèche.png";
+import imgSurpresseur from "./assets/Surpresseur.png";
+import imgMobilair from "./assets/Mobilair.png";
+import imgPiston from "./assets/Piston.png";
+import imgTraitement from "./assets/Traitement.png";
+import imgSigmaControl from "./assets/Sigma control.png";
+import imgSAM from "./assets/SAM.png";
+import imgVariateur from "./assets/Variateur.png";
+import imgInstruments from "./assets/Instruments.png";
+import imgHuile from "./assets/Huile.png";
+import imgAda from "./assets/Ada.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 // ---------------------------------------------------------------------------
@@ -113,18 +125,18 @@ const CATEGORIES = [
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
-      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
-      { id: "vis-seche", label: "Vis sèche", icon: Server },
-      { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge },
-      { id: "mobilair", label: "Mobilair", icon: Truck },
-      { id: "piston", label: "Piston", icon: Disc },
-      { id: "traitement-air", label: "Traitement d'air", icon: Wind },
-      { id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone },
-      { id: "sam-40", label: "SAM 4.0", icon: Cpu },
-      { id: "variateur", label: "Variateur", icon: SlidersHorizontal },
-      { id: "instruments", label: "Instruments", icon: Thermometer },
-      { id: "huile", label: "Huile", icon: Droplet },
-      { id: "ada", label: "ADA", icon: Component },
+      { id: "compresseurs-vis", label: "Compresseurs à vis", icon: Server, image: imgCompresseur, driveFolderId: "1QAyqki_IItZ6vOtf2EuADDKmKGbLkFkU" },
+      { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
+      { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
+      { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
+      { id: "piston", label: "Piston", icon: Disc, image: imgPiston },
+      { id: "traitement-air", label: "Traitement d'air", icon: Wind, image: imgTraitement },
+      { id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone, image: imgSigmaControl },
+      { id: "sam-40", label: "SAM 4.0", icon: Cpu, image: imgSAM },
+      { id: "variateur", label: "Variateur", icon: SlidersHorizontal, image: imgVariateur },
+      { id: "instruments", label: "Instruments", icon: Thermometer, image: imgInstruments },
+      { id: "huile", label: "Huile", icon: Droplet, image: imgHuile },
+      { id: "ada", label: "ADA", icon: Component, image: imgAda },
       { id: "belimo", label: "BELIMO", icon: PlugZap },
     ],
   },
@@ -317,18 +329,16 @@ export default function App() {
             : "Qualité, Performance et Satisfaction Client"}
         </p>
         
-        {!activeCategory && (
-          <img 
-            src={imagePoleExpert} 
-            alt="Illustration Pôle Expert" 
-            style={{
-              display: "block",
-              margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
-              height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
-              width: "auto"
-            }} 
-          />
-        )}
+        <img 
+          src={imagePoleExpert} 
+          alt="Illustration Pôle Expert" 
+          style={{
+            display: "block",
+            margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
+            height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
+            width: "auto"
+          }} 
+        />
 
         {/* fil d'ariane discret */}
         {stack.length > 0 && (
@@ -748,7 +758,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 44 : 38, height: description ? 44 : 38, objectFit: "contain" }}
+          style={{ width: description ? 110 : 100, height: description ? 110 : 100, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
