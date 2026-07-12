@@ -11,6 +11,9 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
+// URL de votre application Web Google Apps Script (voir script.google.com
+// → Déployer → Nouveau déploiement → Application Web). Le destinataire
+// (hay.leang@kaeser.com) est défini directement dans le script, pas ici.
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
@@ -22,6 +25,9 @@ import {
   ArrowRight, Paperclip
 } from "lucide-react";
 
+// pdf.js a besoin d'un "worker" (un script séparé qui fait le rendu en
+// arrière-plan). On le charge depuis un CDN pour rester simple — pas
+// besoin de le copier dans votre projet.
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
 import iconSupportTechnique from "./assets/Support.png";
@@ -43,6 +49,12 @@ import imgAda from "./assets/Ada.png";
 import imgBelimo from "./assets/BELIMO.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
+// ---------------------------------------------------------------------------
+// PDF GOOGLE DRIVE — utilisé quand un item a un champ "driveFolderId".
+// Le dossier Drive doit être partagé en "Tous les utilisateurs disposant
+// du lien" pour que la clé API puisse le lire (elle ne peut pas accéder
+// à des dossiers strictement privés).
+// ---------------------------------------------------------------------------
 const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
 
 async function getDriveDocuments(folderId) {
@@ -61,10 +73,21 @@ async function getDriveDocuments(folderId) {
   return (data.files || []).map((f) => ({
     id: f.id,
     name: f.name,
+    // alt=media renvoie directement les octets du PDF — react-pdf peut
+    // charger cette URL comme n'importe quel fichier.
     url: `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&key=${DRIVE_API_KEY}`,
   }));
 }
 
+// ---------------------------------------------------------------------------
+// PDF LOCAUX — Vite scanne le dossier src/documents/ au démarrage.
+// Pour ajouter un document à un produit : créez (si besoin) le dossier
+// src/documents/ID_DU_PRODUIT/ et déposez-y le PDF. Exemple :
+//   src/documents/compresseurs-vis/notice-installation.pdf
+// Aucune configuration supplémentaire n'est nécessaire — la liste se
+// met à jour automatiquement (rechargez la page si Vite ne le fait pas
+// tout seul après l'ajout d'un nouveau fichier).
+// ---------------------------------------------------------------------------
 const PDF_MODULES = import.meta.glob("/src/documents/**/*.pdf", {
   eager: true,
   query: "?url",
@@ -82,6 +105,7 @@ function getLocalDocuments(itemId) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// Couleurs de la charte — à ajuster à votre identité visuelle
 const COLORS = {
   navy: "#0B1F3A",
   gold: "#F0AB00",
@@ -92,13 +116,19 @@ const COLORS = {
   textMuted: "#6B7280",
 };
 
+// ---------------------------------------------------------------------------
+// STRUCTURE DES DONNÉES
+// Chaque catégorie principale a un id, un label, une description courte,
+// une icône, et une liste de sous-catégories (id / label / icône).
+// C'est cette structure que vous éditez pour changer le contenu de l'app.
+// ---------------------------------------------------------------------------
 const CATEGORIES = [
   {
     id: "support-technique",
     label: "Support technique",
     description: "Documentation et assistance",
     icon: Headset,
-    image: imgCompresseur,
+    image: iconSupportTechnique,
     searchable: true,
     itemIconColor: "#5B7C87",
     items: [
@@ -129,7 +159,7 @@ const CATEGORIES = [
     label: "Garantie",
     description: "Enregistrements et demandes",
     icon: ShieldCheck,
-    image: imgCompresseur,
+    image: iconGarantie,
     items: [
       { id: "conditions", label: "Conditions de garantie", icon: FileCheck },
       { id: "duree", label: "Durée de couverture", icon: Clock },
@@ -141,7 +171,7 @@ const CATEGORIES = [
     label: "Pièces détachées",
     description: "Catalogues et références",
     icon: Package,
-    image: imgCompresseur,
+    image: iconPiecesDetachees,
     items: [
       { id: "recherche", label: "Rechercher une pièce", icon: Search },
       { id: "catalogue", label: "Catalogue", icon: PackageSearch },
@@ -153,7 +183,7 @@ const CATEGORIES = [
     label: "Formation",
     description: "Modules experts",
     icon: GraduationCap,
-    image: imgCompresseur,
+    image: iconFormation,
     items: [
       { id: "guides", label: "Guides pratiques", icon: BookOpen },
       { id: "videos", label: "Tutoriels vidéo", icon: Video },
@@ -163,6 +193,10 @@ const CATEGORIES = [
 ];
 
 export default function App() {
+  // ---------------------------------------------------------------------
+  // AUTHENTIFICATION (Firebase Auth) — l'app entière est verrouillée tant
+  // que l'utilisateur n'est pas connecté avec un compte autorisé.
+  // ---------------------------------------------------------------------
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [kickedOut, setKickedOut] = useState(false);
@@ -176,6 +210,13 @@ export default function App() {
     return unsubscribe;
   }, []);
 
+  // -----------------------------------------------------------------------
+  // SESSION UNIQUE — dès la connexion, on enregistre un identifiant de
+  // session dans Firestore. On écoute ensuite ce document en temps réel :
+  // si quelqu'un se reconnecte ailleurs avec les mêmes identifiants, son
+  // login écrase ce document, et cette session-ci se ferme automatiquement
+  // dès que le changement est détecté.
+  // -----------------------------------------------------------------------
   useEffect(() => {
     if (!user) return;
 
@@ -201,6 +242,9 @@ export default function App() {
     return unsubscribe;
   }, [user]);
 
+  // La pile de navigation : [] = menu principal
+  // [{type:'category', data}] = sous-menu
+  // [{type:'category', data}, {type:'item', data}] = page finale
   const [stack, setStack] = useState([]);
 
   const push = (entry) => setStack((s) => [...s, entry]);
@@ -210,8 +254,11 @@ export default function App() {
   const current = stack[stack.length - 1];
   const activeCategory = stack.find((s) => s.type === "category")?.data;
 
+  // Tant qu'on ne sait pas encore si l'utilisateur est connecté, on
+  // n'affiche rien (évite un flash de contenu protégé à l'écran).
   if (!authReady) return null;
 
+  // Pas connecté → écran de connexion uniquement, rien d'autre n'est rendu.
   if (!user) {
     return <LoginScreen kickedOut={kickedOut} />;
   }
@@ -227,8 +274,10 @@ export default function App() {
         flexDirection: "column",
       }}
     >
+      {/* ---------- LISERÉ DE MARQUE ---------- */}
       <div style={{ height: "20px", background: "#FFC800"}} />
 
+      {/* ---------- EN-TÊTE ---------- */}
       <header
         style={{
           display: "flex",
@@ -260,6 +309,7 @@ export default function App() {
         </button>
       </header>
 
+      {/* ---------- BANDEAU / FIL DE NAVIGATION ---------- */}
       <section
         style={{
           background: COLORS.bannerGray,
@@ -291,12 +341,13 @@ export default function App() {
           alt="Illustration Pôle Expert" 
           style={{
             display: "block",
-            margin: "10px auto 0", 
-            height: "200px",       
+            margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
+            height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
             width: "auto"
           }} 
         />
 
+        {/* fil d'ariane cliquable */}
         {stack.length > 0 && (
           <div
             style={{
@@ -336,6 +387,7 @@ export default function App() {
         )}
       </section>
 
+      {/* ---------- CONTENU ---------- */}
       <main style={{ flex: 1, padding: "40px 24px" }}>
         {!current && (
           <MainMenu
@@ -366,6 +418,9 @@ export default function App() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// ÉCRAN 1 — MENU PRINCIPAL (4 icônes)
+// ---------------------------------------------------------------------------
 function MainMenu({ onSelect }) {
   return (
     <div style={gridStyle}>
@@ -383,6 +438,9 @@ function MainMenu({ onSelect }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// ÉCRAN 2 — SOUS-MENU (icônes de la catégorie choisie)
+// ---------------------------------------------------------------------------
 function SubMenu({ category, onSelect }) {
   const [query, setQuery] = useState("");
 
@@ -427,6 +485,9 @@ function SubMenu({ category, onSelect }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// ÉCRAN 3 — PAGE FINALE (contenu réel)
+// ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
   const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
   const [driveDocuments, setDriveDocuments] = useState([]);
@@ -1206,6 +1267,19 @@ const selectStyle = {
   fontSize: "13px",
 };
 
+const docLinkStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "10px",
+  padding: "12px 14px",
+  borderRadius: "10px",
+  border: `1px solid ${COLORS.cardBorder}`,
+  background: "#FFFFFF",
+  color: COLORS.navy,
+  textDecoration: "none",
+  transition: "border-color 0.15s ease",
+};
+
 const navBtnStyle = {
   display: "flex",
   alignItems: "center",
@@ -1228,5 +1302,18 @@ const closeBtnStyle = {
   fontSize: "13px",
   cursor: "pointer",
   padding: "6px 12px",
+  borderRadius: "8px",
+};
+
+const backBtnStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "4px",
+  background: "rgba(255,255,255,0.15)",
+  border: "none",
+  color: "#FFFFFF",
+  fontSize: "13px",
+  cursor: "pointer",
+  padding: "6px 10px",
   borderRadius: "8px",
 };
