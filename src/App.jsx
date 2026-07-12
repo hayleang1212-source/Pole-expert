@@ -355,7 +355,7 @@ export default function App() {
               alignItems: "center",
               gap: "10px",
               marginTop: "14px",
-              fontSize: "24px",
+              fontSize: "18px",
               opacity: 0.85,
             }}
           >
@@ -371,7 +371,8 @@ export default function App() {
                     style={{
                       cursor: isLast ? "default" : "pointer",
                       opacity: 1,
-                      border: isLast ? `2px solid ${COLORS.gold}` : "none",
+                      background: isLast ? COLORS.gold : "transparent",
+                      color: isLast ? COLORS.navy : "inherit",
                       borderRadius: isLast ? "8px" : 0,
                       padding: isLast ? "2px 10px" : 0,
                     }}
@@ -1068,7 +1069,7 @@ function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
         <img
           src={image}
           alt=""
-          style={{ width: description ? 220 : 200, height: description ? 220 : 200, objectFit: "contain" }}
+          style={{ width: description ? 165 : 150, height: description ? 165 : 150, objectFit: "contain" }}
         />
       ) : (
         <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
@@ -1243,6 +1244,7 @@ const searchWrapStyle = {
   gap: "10px",
   maxWidth: "480px",
   marginLeft: "auto",
+  marginRight: "auto",
   marginBottom: "28px",
   padding: "12px 16px",
   borderRadius: "10px",
