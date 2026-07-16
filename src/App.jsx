@@ -11,7 +11,7 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx5JaFl8Wuh3AeAzal4kjdl6aKtq7sYXEmnN17afZwgD8rW5KtTEJV5PgyOJDkyrS26pw/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
   FileCheck, RefreshCw, Clock,
