@@ -19,7 +19,7 @@ import {
   FileText, Server, Wind, Gauge, Truck, Disc,
   MonitorSmartphone, Cpu, SlidersHorizontal, Thermometer, Droplet,
   Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw, Settings, HelpCircle,
-  ArrowRight, Paperclip
+  ArrowRight, Paperclip, Snowflake, Layers, SeparatorVertical, Filter, Waves, Droplets, ArrowDownToLine
 } from "lucide-react";
 
 import logo from "./assets/logo-kaeser.png";
@@ -46,6 +46,13 @@ import imgSigmaSc1 from "./assets/SC1.png";
 import imgSigmaSc2 from "./assets/SC2.png";
 import imgSigmaSc3 from "./assets/SC3.png";
 import imgSigmaScm from "./assets/SCM.png";
+import imgSecheurFrigorifique from "./assets/Sécheur frigorifique.png";
+import imgSecheurAdsorption from "./assets/Sécheur adsorption.png";
+import imgSecheurMembrane from "./assets/Sécheur à membrane.png";
+import imgFiltration from "./assets/Filtration.png";
+import imgVanneDhs from "./assets/Vanne DHS.png";
+import imgAquamat from "./assets/Aquamat.png";
+import imgPurgeur from "./assets/Purgeur.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
@@ -53,9 +60,12 @@ const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
 async function getDriveFiles(folderId, extension = null) {
   const listUrl = new URL("https://www.googleapis.com/drive/v3/files");
   // Construction dynamique de la requête : si extension est fournie, on filtre, sinon on prend tout
+  // extension peut être une chaîne unique ("tgz") ou un tableau (["tgz", "zip"])
   let q = `'${folderId}' in parents and trashed=false`;
   if (extension) {
-    q += ` and name contains '.${extension}'`;
+    const extensions = Array.isArray(extension) ? extension : [extension];
+    const extQuery = extensions.map((ext) => `name contains '.${ext}'`).join(" or ");
+    q += ` and (${extQuery})`;
   }
   
   listUrl.searchParams.set("q", q);
@@ -129,17 +139,28 @@ const CATEGORIES = [
       },
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
       { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
-      { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
+      { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair, driveFolderId: "18oDG68eFeXA_OV8LrHMFR6nnp4VpWYSO" },
       { id: "piston", label: "Piston", icon: Disc, image: imgPiston, driveFolderId: "1UG8Gd2Lb0682uhR1EltjOAU9tkhhjZMf", driveFolderIdCodesDefaut: "1_hhjsl7E6PT3mDCJXVatfG7aH-SFaPF-", driveFolderIdInstructionTechnique: "1bE65kkKKOElA86jFm82P7DDIaXI3-tpj" },
-      { id: "traitement-air", label: "Traitement d'air", icon: Wind, image: imgTraitement },
+      {
+        id: "traitement-air", label: "Traitement d'air", icon: Wind, image: imgTraitement,
+        items: [
+          { id: "secheur-frigorifique", label: "Sécheur frigorifique", icon: Snowflake, image: imgSecheurFrigorifique },
+          { id: "secheur-adsorption", label: "Sécheur adsorption", icon: Layers, image: imgSecheurAdsorption },
+          { id: "secheur-membrane", label: "Sécheur à membrane", icon: SeparatorVertical, image: imgSecheurMembrane },
+          { id: "filtration", label: "Filtration", icon: Filter, image: imgFiltration },
+          { id: "vanne-dhs", label: "Vanne DHS", icon: Waves, image: imgVanneDhs },
+          { id: "aquamat", label: "AQUAMAT", icon: Droplets, image: imgAquamat },
+          { id: "purgeur", label: "Purgeur", icon: ArrowDownToLine, image: imgPurgeur },
+        ],
+      },
       {
         id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone, image: imgSigmaControl,
         items: [
-          { id: "sigma-scb", label: "SIGMA CONTROL BASIC", icon: MonitorSmartphone, image: imgSigmaScb },
-          { id: "sigma-sc1", label: "SIGMA CONTROL 1", icon: MonitorSmartphone, image: imgSigmaSc1 },
+          { id: "sigma-scb", label: "SIGMA CONTROL BASIC", icon: MonitorSmartphone, image: imgSigmaScb, driveFolderIdCodesDefaut: "1Qhv79NL1RaAw-J1oR4uUbTfeqbjZmX7C", driveFolderIdInstructionTechnique: "1lrCFIdbOxnHZo5Mdtd7Ycs6k0xW-Zprj" },
+          { id: "sigma-sc1", label: "SIGMA CONTROL 1", icon: MonitorSmartphone, image: imgSigmaSc1, driveFolderId: "1_-Y7puS8dMZDyAzzQwJkAHrOxvONsx50", driveFolderIdCommunication: "18y9gRyp4i12I6MUA32sbcf7qzL9eyreY" },
           { id: "sigma-sc2", label: "SIGMA CONTROL 2", icon: MonitorSmartphone, image: imgSigmaSc2, driveFolderId: "179_lD8DVt5RHBMxCEk28Szyeyz2iQ3qw", driveFolderIdCodesDefaut: "1mTt31_Kzc17wIWHVsQxay4aPi3IFvOxN", driveFolderIdCommunication: "1QjspPJ9dln1GzAMjzU0lK_9CrK82Sptn", driveFolderIdUpdate: "1hyQeeah1J_6qdSBz2YmI6qKkpGe7jGNw", driveFolderIdInstructionTechnique: "1VVNszF7ZH3bmjtGdZRfdmB20SHwFKUCa" },
-          { id: "sigma-sc3", label: "SIGMA CONTROL 3", icon: MonitorSmartphone, image: imgSigmaSc3 },
-          { id: "sigma-scm", label: "SIGMA CONTROL MOBILE", icon: MonitorSmartphone, image: imgSigmaScm  },
+          { id: "sigma-sc3", label: "SIGMA CONTROL 3", icon: MonitorSmartphone, image: imgSigmaSc3, driveFolderId: "1-idZVZsifWbGz3wViU0rABYiKTqkN6Lr", driveFolderIdCodesDefaut: "1PqOMKKr2GeUnIfp2DscllnaQ_L-NFU43", driveFolderIdCommunication: "1P2SxMX7nIoZoT2B1RpqsykVMoKORHffN", driveFolderIdInstructionTechnique: "1wQeZ3YZdmfTCyZ2bCMZC1Tj-o9ur0lzW", driveFolderIdUpdate: "1CtId3no7x1whbTIef05hE4y1LnvBSFgZ" },
+          { id: "sigma-scm", label: "SIGMA CONTROL MOBILE", icon: MonitorSmartphone, image: imgSigmaScm, driveFolderId: "1lIhU9S5N4cSX5RBecrdROMwn7tHagZIi", driveFolderIdCodesDefaut: "12cBjWHm8gQ6mQPTwVZ83GgbPx4a0UE4X", driveFolderIdUpdate: "1Xh_sSns43pWKGi09Bf6hoae2vAyBuwzA", driveFolderIdInstructionTechnique: "1re_FkgT4jFWvPpZ97X8mcwqidJ6uGD-s" },
         ],
       },
       { id: "sam-40", label: "SAM 4.0", icon: Cpu, image: imgSAM },
@@ -238,11 +259,11 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.navy, fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       <div style={{ background: "#FFC800", padding: "6px 24px 6px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", height: "72px", boxSizing: "border-box", position: "relative" }}>
         <img src={logo} alt="Kaeser Compresseurs" style={{ height: "100%", width: "auto", display: "block", background: "transparent", flexShrink: 0 }} />
-        <h1 style={{ fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }}>{activeCategory ? activeCategory.label : "Le Pôle Expert"}</h1>
+        <h1 style={{ fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }}>Le Pôle Expert</h1>
         <button onClick={() => signOut(auth)} style={{ fontSize: "13px", color: COLORS.navy, background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", padding: "8px 14px", cursor: "pointer", flexShrink: 0 }}>Se déconnecter ({user.email})</button>
       </div>
       <section style={{ background: COLORS.bannerGray, color: "#FFFFFF", padding: "0 24px 0 24px", display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: "10px 0 0", textAlign: "center" }}>{current?.type === "item" || current?.type === "subcategory" ? current.data.label : "Qualité, Performance et Satisfaction Client"}</p>
+        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: "10px 0 0", textAlign: "center" }}>Qualité, Performance et Satisfaction Client</p>
         <img src={imagePoleExpert} alt="Illustration Pôle Expert" style={{ display: "block", margin: "6px auto 0", height: "250px", width: "auto" }} />
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", fontSize: "13.5px", opacity: 0.85, visibility: stack.length > 0 ? "visible" : "hidden" }}>
           <span style={{ cursor: "pointer" }} onClick={goHome}>Accueil</span>
@@ -257,7 +278,7 @@ export default function App() {
           })}
         </div>
       </section>
-      <main style={{ flex: 1, padding: "40px 24px" }}>
+      <main style={{ flex: 1, padding: "12px 24px 40px" }}>
         {!current && <MainMenu onSelect={(cat) => push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })} />}
         {(current?.type === "category" || current?.type === "subcategory") && <SubMenu category={current.data} onSelect={(item) => push(item.items ? { type: "subcategory", data: item } : { type: "item", data: item })} />}
         {current?.type === "item" && <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />}
@@ -319,7 +340,6 @@ function SubMenu({ category, onSelect }) {
       {showSideIcon ? (
         <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start" }}>
           <div style={{ flex: "0 0 200px", textAlign: "center" }}>
-            <h3 style={{ fontSize: "14px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: COLORS.navy, margin: "0 0 12px" }}>{category.label}</h3>
             {category.image ? (
               <img src={category.image} alt="" style={{ width: 160, height: 160, objectFit: "contain", display: "block", margin: "0 auto" }} />
             ) : (
@@ -344,7 +364,6 @@ function DetailPage({ category, item }) {
   return (
     <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start", maxWidth: "1200px" }}>
       <div style={{ flex: "0 0 300px" }}>
-        <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 10px" }}>{item.label}</h2>
         {item.image ? (
           <img src={item.image} alt="" style={{ width: 200, height: 200, objectFit: "contain", marginBottom: "10px" }} />
         ) : (
@@ -370,7 +389,7 @@ function DetailPage({ category, item }) {
               <DocumentSection label="Communication" driveFolderId={item.driveFolderIdCommunication} localFolderId={`${item.id}/communication`} forceDownload={true} />
             )}
             {item.driveFolderIdUpdate && (
-              <DocumentSection label="Update" driveFolderId={item.driveFolderIdUpdate} localFolderId={`${item.id}/update`} fileExtension="tgz" forceDownload={true} />
+              <DocumentSection label="Update" driveFolderId={item.driveFolderIdUpdate} localFolderId={`${item.id}/update`} fileExtension={["tgz", "zip"]} forceDownload={true} />
             )}
             {item.driveFolderIdInstructionTechnique && (
               <DocumentSection label="Instruction technique" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} />
