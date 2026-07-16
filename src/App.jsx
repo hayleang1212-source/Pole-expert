@@ -11,9 +11,6 @@ import {
 } from "firebase/auth";
 import { doc, setDoc, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-// URL de votre application Web Google Apps Script (voir script.google.com
-// → Déployer → Nouveau déploiement → Application Web). Le destinataire
-// (hay.leang@kaeser.com) est défini directement dans le script, pas ici.
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjVe7qE7Xcn1nbofi5z2-S5d7_HSbTM_WkzU0WO5HRZFgUedywTilOC0-YLOSnbSAXMg/exec";
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
@@ -25,9 +22,6 @@ import {
   ArrowRight, Paperclip
 } from "lucide-react";
 
-// pdf.js a besoin d'un "worker" (un script séparé qui fait le rendu en
-// arrière-plan). On le charge depuis un CDN pour rester simple — pas
-// besoin de le copier dans votre projet.
 import logo from "./assets/logo-kaeser.png";
 import imagePoleExpert from "./assets/image-pole-expert.png";
 import iconSupportTechnique from "./assets/Support.png";
@@ -47,22 +41,24 @@ import imgInstruments from "./assets/Instruments.png";
 import imgHuile from "./assets/Huile.png";
 import imgAda from "./assets/Ada.png";
 import imgBelimo from "./assets/BELIMO.png";
+import imgSigmaScb from "./assets/SCB.png";
+import imgSigmaSc1 from "./assets/SC1.png";
+import imgSigmaSc2 from "./assets/SC2.png";
+import imgSigmaSc3 from "./assets/SC3.png";
+import imgSigmaScm from "./assets/SCM.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
-// ---------------------------------------------------------------------------
-// PDF GOOGLE DRIVE — utilisé quand un item a un champ "driveFolderId".
-// Le dossier Drive doit être partagé en "Tous les utilisateurs disposant
-// du lien" pour que la clé API puisse le lire (elle ne peut pas accéder
-// à des dossiers strictement privés).
-// ---------------------------------------------------------------------------
 const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
 
-async function getDriveDocuments(folderId) {
+async function getDriveFiles(folderId, extension = null) {
   const listUrl = new URL("https://www.googleapis.com/drive/v3/files");
-  listUrl.searchParams.set(
-    "q",
-    `'${folderId}' in parents and mimeType='application/pdf' and trashed=false`
-  );
+  // Construction dynamique de la requête : si extension est fournie, on filtre, sinon on prend tout
+  let q = `'${folderId}' in parents and trashed=false`;
+  if (extension) {
+    q += ` and name contains '.${extension}'`;
+  }
+  
+  listUrl.searchParams.set("q", q);
   listUrl.searchParams.set("fields", "files(id,name)");
   listUrl.searchParams.set("key", DRIVE_API_KEY);
 
@@ -73,21 +69,14 @@ async function getDriveDocuments(folderId) {
   return (data.files || []).map((f) => ({
     id: f.id,
     name: f.name,
-    // alt=media renvoie directement les octets du PDF — react-pdf peut
-    // charger cette URL comme n'importe quel fichier.
     url: `https://www.googleapis.com/drive/v3/files/${f.id}?alt=media&key=${DRIVE_API_KEY}`,
-  }));
+  })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// ---------------------------------------------------------------------------
-// PDF LOCAUX — Vite scanne le dossier src/documents/ au démarrage.
-// Pour ajouter un document à un produit : créez (si besoin) le dossier
-// src/documents/ID_DU_PRODUIT/ et déposez-y le PDF. Exemple :
-//   src/documents/compresseurs-vis/notice-installation.pdf
-// Aucune configuration supplémentaire n'est nécessaire — la liste se
-// met à jour automatiquement (rechargez la page si Vite ne le fait pas
-// tout seul après l'ajout d'un nouveau fichier).
-// ---------------------------------------------------------------------------
+async function getDriveDocuments(folderId) {
+  return getDriveFiles(folderId, null);
+}
+
 const PDF_MODULES = import.meta.glob("/src/documents/**/*.pdf", {
   eager: true,
   query: "?url",
@@ -105,7 +94,6 @@ function getLocalDocuments(itemId) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Couleurs de la charte — à ajuster à votre identité visuelle
 const COLORS = {
   navy: "#0B1F3A",
   gold: "#F0AB00",
@@ -116,12 +104,11 @@ const COLORS = {
   textMuted: "#6B7280",
 };
 
-// ---------------------------------------------------------------------------
-// STRUCTURE DES DONNÉES
-// Chaque catégorie principale a un id, un label, une description courte,
-// une icône, et une liste de sous-catégories (id / label / icône).
-// C'est cette structure que vous éditez pour changer le contenu de l'app.
-// ---------------------------------------------------------------------------
+const SERVICE_EMAILS = {
+  "Garantie": "garantie.france@kaeser.com",
+  "Pièces détachées": "offres.france@kaeser.com",
+};
+
 const CATEGORIES = [
   {
     id: "support-technique",
@@ -143,15 +130,24 @@ const CATEGORIES = [
       { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche },
       { id: "surpresseur-vis", label: "Surpresseur à vis", icon: Gauge, image: imgSurpresseur },
       { id: "mobilair", label: "Mobilair", icon: Truck, image: imgMobilair },
-      { id: "piston", label: "Piston", icon: Disc, image: imgPiston },
+      { id: "piston", label: "Piston", icon: Disc, image: imgPiston, driveFolderId: "1UG8Gd2Lb0682uhR1EltjOAU9tkhhjZMf", driveFolderIdCodesDefaut: "1_hhjsl7E6PT3mDCJXVatfG7aH-SFaPF-", driveFolderIdInstructionTechnique: "1bE65kkKKOElA86jFm82P7DDIaXI3-tpj" },
       { id: "traitement-air", label: "Traitement d'air", icon: Wind, image: imgTraitement },
-      { id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone, image: imgSigmaControl },
+      {
+        id: "sigma-control", label: "Sigma Control", icon: MonitorSmartphone, image: imgSigmaControl,
+        items: [
+          { id: "sigma-scb", label: "SIGMA CONTROL BASIC", icon: MonitorSmartphone, image: imgSigmaScb },
+          { id: "sigma-sc1", label: "SIGMA CONTROL 1", icon: MonitorSmartphone, image: imgSigmaSc1 },
+          { id: "sigma-sc2", label: "SIGMA CONTROL 2", icon: MonitorSmartphone, image: imgSigmaSc2, driveFolderId: "179_lD8DVt5RHBMxCEk28Szyeyz2iQ3qw", driveFolderIdCodesDefaut: "1mTt31_Kzc17wIWHVsQxay4aPi3IFvOxN", driveFolderIdCommunication: "1QjspPJ9dln1GzAMjzU0lK_9CrK82Sptn", driveFolderIdUpdate: "1hyQeeah1J_6qdSBz2YmI6qKkpGe7jGNw", driveFolderIdInstructionTechnique: "1VVNszF7ZH3bmjtGdZRfdmB20SHwFKUCa" },
+          { id: "sigma-sc3", label: "SIGMA CONTROL 3", icon: MonitorSmartphone, image: imgSigmaSc3 },
+          { id: "sigma-scm", label: "SIGMA CONTROL MOBILE", icon: MonitorSmartphone, image: imgSigmaScm  },
+        ],
+      },
       { id: "sam-40", label: "SAM 4.0", icon: Cpu, image: imgSAM },
       { id: "variateur", label: "Variateur", icon: SlidersHorizontal, image: imgVariateur },
       { id: "instruments", label: "Instruments", icon: Thermometer, image: imgInstruments },
-      { id: "huile", label: "Huile", icon: Droplet, image: imgHuile },
-      { id: "ada", label: "ADA", icon: Component, image: imgAda },
-      { id: "belimo", label: "BELIMO", icon: PlugZap, image: imgBelimo },
+      { id: "huile", label: "Huile", icon: Droplet, image: imgHuile, driveFolderIdInstructionTechnique: "1vD-kDI5DyKA6PQHMqgWtUgAJPo62Nfsu" },
+      { id: "ada", label: "ADA", icon: Component, image: imgAda, driveFolderIdInstructionTechnique: "1UCzv0J4YNOG9Wvyu2GJFK1xllMK9TJ6n" },
+      { id: "belimo", label: "BELIMO", icon: PlugZap, image: imgBelimo, driveFolderIdInstructionTechnique: "10NZSFUUzsV6fR5aY7mWqVivQDMaJjP63" },
     ],
   },
   {
@@ -161,9 +157,8 @@ const CATEGORIES = [
     icon: ShieldCheck,
     image: iconGarantie,
     items: [
-      { id: "conditions", label: "Conditions de garantie", icon: FileCheck },
-      { id: "duree", label: "Durée de couverture", icon: Clock },
-      { id: "retour", label: "Retour / échange", icon: RefreshCw },
+      { id: "demande-garantie", label: "Demande garantie", icon: FileCheck },
+      { id: "enregistrement-machine", label: "Enregistrement de la machine", icon: ClipboardList },
     ],
   },
   {
@@ -193,10 +188,6 @@ const CATEGORIES = [
 ];
 
 export default function App() {
-  // ---------------------------------------------------------------------
-  // AUTHENTIFICATION (Firebase Auth) — l'app entière est verrouillée tant
-  // que l'utilisateur n'est pas connecté avec un compte autorisé.
-  // ---------------------------------------------------------------------
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
   const [kickedOut, setKickedOut] = useState(false);
@@ -210,27 +201,16 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // -----------------------------------------------------------------------
-  // SESSION UNIQUE — dès la connexion, on enregistre un identifiant de
-  // session dans Firestore. On écoute ensuite ce document en temps réel :
-  // si quelqu'un se reconnecte ailleurs avec les mêmes identifiants, son
-  // login écrase ce document, et cette session-ci se ferme automatiquement
-  // dès que le changement est détecté.
-  // -----------------------------------------------------------------------
   useEffect(() => {
     if (!user) return;
-
     const sessionKey = `pole-expert-session-${user.uid}`;
     let sessionId = localStorage.getItem(sessionKey);
     if (!sessionId) {
       sessionId = crypto.randomUUID();
       localStorage.setItem(sessionKey, sessionId);
     }
-
     const sessionRef = doc(db, "sessions", user.uid);
-
     setDoc(sessionRef, { sessionId, updatedAt: serverTimestamp() }).catch(() => {});
-
     const unsubscribe = onSnapshot(sessionRef, (snap) => {
       const activeSessionId = snap.data()?.sessionId;
       if (activeSessionId && activeSessionId !== sessionId) {
@@ -238,15 +218,10 @@ export default function App() {
         signOut(auth);
       }
     });
-
     return unsubscribe;
   }, [user]);
 
-  // La pile de navigation : [] = menu principal
-  // [{type:'category', data}] = sous-menu
-  // [{type:'category', data}, {type:'item', data}] = page finale
   const [stack, setStack] = useState([]);
-
   const push = (entry) => setStack((s) => [...s, entry]);
   const pop = () => setStack((s) => s.slice(0, -1));
   const goHome = () => setStack([]);
@@ -254,246 +229,186 @@ export default function App() {
   const current = stack[stack.length - 1];
   const activeCategory = stack.find((s) => s.type === "category")?.data;
 
-  // Tant qu'on ne sait pas encore si l'utilisateur est connecté, on
-  // n'affiche rien (évite un flash de contenu protégé à l'écran).
   if (!authReady) return null;
-
-  // Pas connecté → écran de connexion uniquement, rien d'autre n'est rendu.
   if (!user) {
     return <LoginScreen kickedOut={kickedOut} />;
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: COLORS.bg,
-        color: COLORS.navy,
-        fontFamily: "'Inter', system-ui, sans-serif",
-        display: "flex",
-        flexDirection: "column",
-      }}
-    >
-      {/* ---------- LISERÉ DE MARQUE ---------- */}
-      <div style={{ height: "20px", background: "#FFC800"}} />
-
-      {/* ---------- EN-TÊTE ---------- */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 24px",
-          background: "#FFFFFF",
-          borderBottom: "1px solid #EFEFEC",
-        }}
-      >
-      <img 
-          src={logo} 
-          alt="Kaeser Compresseurs" 
-          style={{ height: "80px", width: "auto", display: "block" }} 
-        />
-        <button
-          onClick={() => signOut(auth)}
-          style={{
-            fontSize: "13px",
-            color: COLORS.textMuted,
-            background: "none",
-            border: `1px solid ${COLORS.cardBorder}`,
-            borderRadius: "8px",
-            padding: "8px 14px",
-            cursor: "pointer",
-          }}
-        >
-          Se déconnecter ({user.email})
-        </button>
-      </header>
-
-      {/* ---------- BANDEAU / FIL DE NAVIGATION ---------- */}
-      <section
-        style={{
-          background: COLORS.bannerGray,
-          color: "#FFFFFF",
-          padding: "3px 24px 20px 24px", 
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-        }}
-      >
-        <h1
-          style={{
-            fontSize: "40px",
-            fontWeight: 800,
-            margin: stack.length > 0 ? "10px 0 4px" : "0 0 4px",
-            textAlign: "center",
-          }}
-        >
-          {activeCategory ? activeCategory.label : "Le Pôle Expert"}
-        </h1>
-        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: 0,textAlign: "center" }}>
-          {current?.type === "item" || current?.type === "subcategory"
-            ? current.data.label
-            : "Qualité, Performance et Satisfaction Client"}
-        </p>
-        
-        <img 
-          src={imagePoleExpert} 
-          alt="Illustration Pôle Expert" 
-          style={{
-            display: "block",
-            margin: "10px auto 0", /* Centre l'image et met un espace de 24px au-dessus */
-            height: "200px",       /* Ajustez cette valeur pour la taille souhaitée */
-            width: "auto"
-          }} 
-        />
-
-        {/* fil d'ariane cliquable */}
-        {stack.length > 0 && (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              marginTop: "14px",
-              fontSize: "18px",
-              opacity: 0.85,
-            }}
-          >
-            <span style={{ cursor: "pointer" }} onClick={goHome}>
-              Accueil
-            </span>
-            {stack.map((s, i) => {
-              const isLast = i === stack.length - 1;
-              return (
-                <span key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <span style={{ opacity: 0.6 }}>/</span>
-                  <span
-                    style={{
-                      cursor: isLast ? "default" : "pointer",
-                      opacity: 1,
-                      background: isLast ? COLORS.gold : "transparent",
-                      color: isLast ? COLORS.navy : "inherit",
-                      borderRadius: isLast ? "8px" : 0,
-                      padding: isLast ? "2px 10px" : 0,
-                    }}
-                    onClick={() => {
-                      if (!isLast) {
-                        setStack((prev) => prev.slice(0, i + 1));
-                      }
-                    }}
-                  >
-                    {s.data.label}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        )}
+    <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.navy, fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "#FFC800", padding: "6px 24px 6px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", height: "72px", boxSizing: "border-box", position: "relative" }}>
+        <img src={logo} alt="Kaeser Compresseurs" style={{ height: "100%", width: "auto", display: "block", background: "transparent", flexShrink: 0 }} />
+        <h1 style={{ fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }}>{activeCategory ? activeCategory.label : "Le Pôle Expert"}</h1>
+        <button onClick={() => signOut(auth)} style={{ fontSize: "13px", color: COLORS.navy, background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", padding: "8px 14px", cursor: "pointer", flexShrink: 0 }}>Se déconnecter ({user.email})</button>
+      </div>
+      <section style={{ background: COLORS.bannerGray, color: "#FFFFFF", padding: "0 24px 0 24px", display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+        <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: "10px 0 0", textAlign: "center" }}>{current?.type === "item" || current?.type === "subcategory" ? current.data.label : "Qualité, Performance et Satisfaction Client"}</p>
+        <img src={imagePoleExpert} alt="Illustration Pôle Expert" style={{ display: "block", margin: "6px auto 0", height: "250px", width: "auto" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", fontSize: "13.5px", opacity: 0.85, visibility: stack.length > 0 ? "visible" : "hidden" }}>
+          <span style={{ cursor: "pointer" }} onClick={goHome}>Accueil</span>
+          {stack.map((s, i) => {
+            const isLast = i === stack.length - 1;
+            return (
+              <span key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <span style={{ opacity: 0.6 }}>/</span>
+                <span style={{ cursor: isLast ? "default" : "pointer", opacity: 1, background: isLast ? COLORS.gold : "transparent", color: isLast ? COLORS.navy : "inherit", borderRadius: isLast ? "8px" : 0, padding: isLast ? "2px 10px" : 0 }} onClick={() => { if (!isLast) { setStack((prev) => prev.slice(0, i + 1)); } }}>{s.data.label}</span>
+              </span>
+            );
+          })}
+        </div>
       </section>
-
-      {/* ---------- CONTENU ---------- */}
       <main style={{ flex: 1, padding: "40px 24px" }}>
-        {!current && (
-          <MainMenu
-            onSelect={(cat) =>
-              push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })
-            }
-          />
-        )}
-
-        {(current?.type === "category" || current?.type === "subcategory") && (
-          <SubMenu
-            category={current.data}
-            onSelect={(item) =>
-              push(
-                item.items
-                  ? { type: "subcategory", data: item }
-                  : { type: "item", data: item }
-              )
-            }
-          />
-        )}
-
-        {current?.type === "item" && (
-          <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />
-        )}
+        {!current && <MainMenu onSelect={(cat) => push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })} />}
+        {(current?.type === "category" || current?.type === "subcategory") && <SubMenu category={current.data} onSelect={(item) => push(item.items ? { type: "subcategory", data: item } : { type: "item", data: item })} />}
+        {current?.type === "item" && <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />}
       </main>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 1 — MENU PRINCIPAL (4 icônes)
-// ---------------------------------------------------------------------------
 function MainMenu({ onSelect }) {
   return (
     <div style={gridStyle}>
       {CATEGORIES.map((cat) => (
-        <Card
-          key={cat.id}
-          icon={cat.icon}
-          image={cat.image}
-          label={cat.label}
-          description={cat.description}
-          onClick={() => onSelect(cat)}
-        />
+        <Card key={cat.id} icon={cat.icon} image={cat.image} label={cat.label} description={cat.description} onClick={() => onSelect(cat)} />
       ))}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 2 — SOUS-MENU (icônes de la catégorie choisie)
-// ---------------------------------------------------------------------------
 function SubMenu({ category, onSelect }) {
   const [query, setQuery] = useState("");
+  const [showExpertForm, setShowExpertForm] = useState(false);
+  const [showMachineForm, setShowMachineForm] = useState(false);
+  const filteredItems = category.items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
+  const showSideIcon = category.id === "garantie" || category.id === "pieces-detachees" || category.id === "formation";
 
-  const filteredItems = category.items.filter((item) =>
-    item.label.toLowerCase().includes(query.toLowerCase())
+  const handleItemClick = (item) => {
+    if (category.id === "garantie" && item.id === "demande-garantie") { setShowExpertForm(true); return; }
+    if (category.id === "garantie" && item.id === "enregistrement-machine") { setShowMachineForm(true); return; }
+    onSelect(item);
+  };
+
+  const content = (
+    <>
+      {category.searchable && (
+        <div style={searchWrapStyle}>
+          <Search size={18} color={COLORS.textMuted} />
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Rechercher..." style={searchInputStyle} />
+        </div>
+      )}
+      <div style={showSideIcon ? { display: "flex", flexWrap: "wrap", gap: "18px", justifyContent: "center" } : gridStyle}>
+        {filteredItems.map((item) => (
+          <Card 
+            key={item.id} 
+            icon={item.icon} 
+            image={item.image} 
+            label={item.label} 
+            iconColor={category.itemIconColor} 
+            onClick={() => handleItemClick(item)} 
+            imageSize={item.id === "sigma-scm" ? 100 : undefined}
+          />
+        ))}
+      </div>
+      {category.searchable && filteredItems.length === 0 && <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>Aucun résultat pour « {query} ».</p>}
+    </>
   );
 
   return (
     <div>
-      {category.searchable && (
-        <div style={searchWrapStyle}>
-          <Search size={18} color={COLORS.textMuted} />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher..."
-            style={searchInputStyle}
-          />
+      {showSideIcon ? (
+        <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ flex: "0 0 200px", textAlign: "center" }}>
+            <h3 style={{ fontSize: "14px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: COLORS.navy, margin: "0 0 12px" }}>{category.label}</h3>
+            {category.image ? (
+              <img src={category.image} alt="" style={{ width: 160, height: 160, objectFit: "contain", display: "block", margin: "0 auto" }} />
+            ) : (
+              <div style={{ display: "inline-flex", padding: "16px", borderRadius: "14px", background: "#FBF1D9" }}>
+                <category.icon size={30} color={COLORS.gold} />
+              </div>
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: "280px" }}>{content}</div>
         </div>
+      ) : (
+        content
       )}
-
-      <div style={gridStyle}>
-        {filteredItems.map((item) => (
-          <Card
-            key={item.id}
-            icon={item.icon}
-            image={item.image}
-            label={item.label}
-            iconColor={category.itemIconColor}
-            onClick={() => onSelect(item)}
-          />
-        ))}
-      </div>
-
-      {category.searchable && filteredItems.length === 0 && (
-        <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>
-          Aucun résultat pour « {query} ».
-        </p>
-      )}
+      {showExpertForm && <ExpertRequestForm item={null} category={category} initialSujet="Garantie" onClose={() => setShowExpertForm(false)} />}
+      {showMachineForm && <MachineRegistrationForm category={category} onClose={() => setShowMachineForm(false)} />}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// ÉCRAN 3 — PAGE FINALE (contenu réel)
-// ---------------------------------------------------------------------------
 function DetailPage({ category, item }) {
-  const localDocuments = useMemo(() => getLocalDocuments(item.id), [item.id]);
+  const [showExpertForm, setShowExpertForm] = useState(false);
+  return (
+    <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start", maxWidth: "1200px" }}>
+      <div style={{ flex: "0 0 300px" }}>
+        <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 10px" }}>{item.label}</h2>
+        {item.image ? (
+          <img src={item.image} alt="" style={{ width: 200, height: 200, objectFit: "contain", marginBottom: "10px" }} />
+        ) : (
+          <div style={{ display: "inline-flex", padding: "16px", borderRadius: "14px", background: "#FBF1D9", marginBottom: "10px" }}>
+            <item.icon size={30} color={COLORS.gold} />
+          </div>
+        )}
+      </div>
+      <div style={{ flex: 1, minWidth: "320px", maxWidth: "600px" }}>
+        {item.id === "huile" ? (
+          item.driveFolderIdInstructionTechnique && (
+            <DocumentSection label="Fiche de sécurité" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} />
+          )
+        ) : (
+          <>
+            {item.driveFolderId && (
+              <DocumentSection label="Notice d'utilisation" driveFolderId={item.driveFolderId} localFolderId={item.id} />
+            )}
+            {item.driveFolderIdCodesDefaut && (
+              <DocumentSection label="Codes défaut" driveFolderId={item.driveFolderIdCodesDefaut} localFolderId={`${item.id}/codes-defaut`} />
+            )}
+            {item.driveFolderIdCommunication && (
+              <DocumentSection label="Communication" driveFolderId={item.driveFolderIdCommunication} localFolderId={`${item.id}/communication`} forceDownload={true} />
+            )}
+            {item.driveFolderIdUpdate && (
+              <DocumentSection label="Update" driveFolderId={item.driveFolderIdUpdate} localFolderId={`${item.id}/update`} fileExtension="tgz" forceDownload={true} />
+            )}
+            {item.driveFolderIdInstructionTechnique && (
+              <DocumentSection label="Instruction technique" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} />
+            )}
+          </>
+        )}
+        <div style={{ display: "flex", justifyContent: "flex-start", marginTop: "28px" }}>
+          <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
+            Une question ? Contactez nos experts
+            <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+      {showExpertForm && <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />}
+    </div>
+  );
+}
+
+async function downloadFile(doc) {
+  try {
+    const res = await fetch(doc.url);
+    if (!res.ok) throw new Error("Téléchargement impossible");
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = doc.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(blobUrl);
+  } catch (e) {
+    window.open(doc.url, "_blank");
+  }
+}
+
+function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = null, forceDownload = false }) {
+  const localDocuments = useMemo(() => getLocalDocuments(localFolderId), [localFolderId]);
   const [driveDocuments, setDriveDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -501,199 +416,74 @@ function DetailPage({ category, item }) {
   const [selectedDocId, setSelectedDocId] = useState("");
 
   useEffect(() => {
-    if (!item.driveFolderId) return;
-
+    if (!driveFolderId) return;
     setLoading(true);
     setError(null);
-
-    getDriveDocuments(item.driveFolderId)
+    getDriveFiles(driveFolderId, fileExtension)
       .then(setDriveDocuments)
       .catch(() => setError("Impossible de charger les documents depuis Drive."))
       .finally(() => setLoading(false));
-  }, [item.driveFolderId]);
+  }, [driveFolderId, fileExtension]);
 
-  const documents = item.driveFolderId ? driveDocuments : localDocuments;
-
-  const [showExpertForm, setShowExpertForm] = useState(false);
-
+  const documents = driveFolderId ? driveDocuments : localDocuments;
+  
+  // On ne peut prévisualiser que les PDF, sauf si forceDownload est activé
   const handleViewSelected = () => {
     const doc = documents.find((d) => d.id === selectedDocId);
-    if (doc) setViewingDoc(doc);
+    if (!doc) return;
+    
+    // Vérifie si le fichier est un PDF pour la prévisualisation
+    const isPdf = doc.name.toLowerCase().endsWith(".pdf");
+    const isPreviewable = isPdf && !forceDownload;
+
+    if (isPreviewable) {
+      setViewingDoc(doc);
+    } else {
+      downloadFile(doc);
+    }
   };
 
   return (
-    <div style={{ maxWidth: "480px" }}>
-      {item.image ? (
-        <img
-          src={item.image}
-          alt=""
-          style={{ width: 100, height: 100, objectFit: "contain", marginBottom: "18px" }}
-        />
-      ) : (
-        <div
-          style={{
-            display: "inline-flex",
-            padding: "16px",
-            borderRadius: "14px",
-            background: "#FBF1D9",
-            marginBottom: "18px",
-          }}
-        >
-          <item.icon size={30} color={COLORS.gold} />
+    <div style={{ marginTop: "22px" }}>
+      <h3 style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>{label}</h3>
+      {loading && <p style={{ fontSize: "13px", color: COLORS.textMuted }}>Chargement…</p>}
+      {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
+      {!loading && !error && documents.length === 0 && <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>Aucun document disponible.</p>}
+      {!loading && !error && documents.length > 0 && (
+        <div style={{ display: "flex", gap: "8px" }}>
+          <select value={selectedDocId} onChange={(e) => setSelectedDocId(e.target.value)} style={selectStyle}>
+            <option value="">Choisir un document…</option>
+            {documents.map((doc) => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
+          </select>
+          <button onClick={handleViewSelected} disabled={!selectedDocId} style={{ display: "flex", alignItems: "center", gap: "6px", background: selectedDocId ? COLORS.gold : "#EFEFEC", color: selectedDocId ? COLORS.navy : COLORS.textMuted, border: "none", borderRadius: "10px", padding: "0 18px", fontSize: "13px", fontWeight: 700, cursor: selectedDocId ? "pointer" : "default", whiteSpace: "nowrap" }}>
+            {selectedDocId && documents.find(d => d.id === selectedDocId)?.name.toLowerCase().endsWith(".pdf") && !forceDownload ? <Eye size={16} /> : <FileText size={16} />}
+            {selectedDocId && documents.find(d => d.id === selectedDocId)?.name.toLowerCase().endsWith(".pdf") && !forceDownload ? "Afficher" : "Télécharger"}
+          </button>
         </div>
       )}
-      <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px" }}>{item.label}</h2>
-      <p style={{ color: COLORS.textMuted, fontSize: "14px", lineHeight: 1.6, marginBottom: "22px" }}>
-        Voici la page de destination pour « {item.label} », dans la catégorie « {category.label} ».
-        C'est ici que vous mettez les vrais contrôles, réglages ou informations liés à cet élément.
-      </p>
-
-      <div>
-        <h3
-          style={{
-            fontSize: "12px",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-            color: COLORS.textMuted,
-            marginBottom: "10px",
-          }}
-        >
-          Notice d'utilisation
-        </h3>
-
-        {loading && <p style={{ fontSize: "13px", color: COLORS.textMuted }}>Chargement…</p>}
-
-        {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
-
-        {!loading && !error && documents.length === 0 && (
-          <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>
-            Aucun document disponible pour le moment.
-          </p>
-        )}
-
-        {!loading && !error && documents.length > 0 && (
-          <div style={{ display: "flex", gap: "8px" }}>
-            <select
-              value={selectedDocId}
-              onChange={(e) => setSelectedDocId(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">Choisir un document…</option>
-              {documents.map((doc) => (
-                <option key={doc.id} value={doc.id}>
-                  {doc.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={handleViewSelected}
-              disabled={!selectedDocId}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                background: selectedDocId ? COLORS.gold : "#EFEFEC",
-                color: selectedDocId ? COLORS.navy : COLORS.textMuted,
-                border: "none",
-                borderRadius: "10px",
-                padding: "0 18px",
-                fontSize: "13px",
-                fontWeight: 700,
-                cursor: selectedDocId ? "pointer" : "default",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <Eye size={16} />
-              Afficher
-            </button>
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "28px" }}>
-        <button
-          onClick={() => setShowExpertForm(true)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "8px",
-            background: COLORS.gold,
-            color: COLORS.navy,
-            border: "none",
-            borderRadius: "10px",
-            padding: "14px 20px",
-            fontSize: "13px",
-            fontWeight: 700,
-            letterSpacing: "0.02em",
-            textTransform: "uppercase",
-            cursor: "pointer",
-          }}
-        >
-          Une question ? Contactez nos experts
-          <ArrowRight size={16} />
-        </button>
-      </div>
-
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
-
-      {showExpertForm && (
-        <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />
-      )}
     </div>
   );
 }
 
-function ExpertRequestForm({ item, category, onClose }) {
-  const [form, setForm] = useState({
-    nom: "",
-    prenom: "",
-    email: "",
-    machine: "",
-    numeroSerie: "",
-    reference: "",
-    sujet: "Support Technique",
-    message: "",
-  });
+function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Technique" }) {
+  const [form, setForm] = useState({ nom: "", prenom: "", email: "", machine: "", numeroSerie: "", reference: "", sujet: initialSujet, message: "" });
   const [fileName, setFileName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
-
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
     try {
-      await addDoc(collection(db, "expertRequests"), {
-        ...form,
-        pieceJointeNom: fileName || null,
-        produit: item.label,
-        categorie: category?.label || null,
-        requestedBy: auth.currentUser?.email || null,
-        createdAt: serverTimestamp(),
-      });
-
+      const destinataire = SERVICE_EMAILS[form.sujet] || null;
+      await addDoc(collection(db, "expertRequests"), { ...form, destinataire, pieceJointeNom: fileName || null, produit: item?.label || category?.label || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp() });
       await fetch(APPS_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          nom: form.nom,
-          prenom: form.prenom,
-          email: form.email,
-          machine: form.machine,
-          numeroSerie: form.numeroSerie,
-          reference: form.reference,
-          sujet: form.sujet,
-          message: form.message,
-          produit: item.label,
-          categorie: category?.label || "",
-          pieceJointe: fileName || "Aucune",
-        }),
+        method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ...form, destinataire, produit: item?.label || category?.label || "", categorie: category?.label || "", pieceJointe: fileName || "Aucune" }),
       });
-
       setSent(true);
     } catch {
       setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
@@ -701,125 +491,108 @@ function ExpertRequestForm({ item, category, onClose }) {
       setSubmitting(false);
     }
   };
-
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(11,31,58,0.6)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-        padding: "20px",
-      }}
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#FFFFFF",
-          borderRadius: "16px",
-          maxWidth: "480px",
-          width: "100%",
-          maxHeight: "90vh",
-          overflow: "auto",
-          padding: "28px",
-          position: "relative",
-        }}
-      >
-        <button
-          onClick={onClose}
-          aria-label="Fermer"
-          style={{
-            position: "absolute",
-            top: "16px",
-            right: "16px",
-            background: "none",
-            border: "none",
-            cursor: "pointer",
-            color: COLORS.textMuted,
-          }}
-        >
-          <X size={20} />
-        </button>
-
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "480px", width: "100%", maxHeight: "90vh", overflow: "auto", padding: "28px", position: "relative" }}>
+        <button onClick={onClose} aria-label="Fermer" style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={20} /></button>
         {sent ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>
-              Demande envoyée
-            </h2>
-            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>
-              Un expert vous répondra dans les meilleurs délais.
-            </p>
-            <button onClick={onClose} style={primaryBtnStyle}>
-              Fermer
-            </button>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>Demande envoyée</h2>
+            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>Un expert vous répondra dans les meilleurs délais.</p>
+            <button onClick={onClose} style={primaryBtnStyle}>Fermer</button>
           </div>
         ) : (
           <>
-            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>
-              Nouvelle Demande d'Expertise
-            </h2>
-
+            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>Nouvelle Demande d'Expertise</h2>
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               <input required placeholder="Nom" value={form.nom} onChange={update("nom")} style={formInputStyle} />
               <input required placeholder="Prénom" value={form.prenom} onChange={update("prenom")} style={formInputStyle} />
               <input required type="email" placeholder="E-mail" value={form.email} onChange={update("email")} style={formInputStyle} />
-
-              <FieldWithTooltip
-                placeholder="Machine"
-                value={form.machine}
-                onChange={update("machine")}
-                tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)."
-              />
-              <FieldWithTooltip
-                placeholder="N° Série"
-                value={form.numeroSerie}
-                onChange={update("numeroSerie")}
-                tooltip="Le numéro de série figure sur la plaque signalétique de la machine."
-              />
-              <FieldWithTooltip
-                placeholder="Référence"
-                value={form.reference}
-                onChange={update("reference")}
-                tooltip="Une référence interne de commande ou de dossier, si vous en avez une."
-              />
-
+              <FieldWithTooltip placeholder="Machine" value={form.machine} onChange={update("machine")} tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)." />
+              <FieldWithTooltip placeholder="N° Série" value={form.numeroSerie} onChange={update("numeroSerie")} tooltip="Le numéro de série figure sur la plaque signalétique de la machine." />
+              <FieldWithTooltip placeholder="Référence" value={form.reference} onChange={update("reference")} tooltip="Une référence interne de commande ou de dossier, si vous en avez une." />
               <select required value={form.sujet} onChange={update("sujet")} style={formInputStyle}>
-                <option>Support Technique</option>
-                <option>Garantie</option>
-                <option>Pièces détachées</option>
-                <option>Formation</option>
+                <option>Support Technique</option><option>Garantie</option><option>Pièces détachées</option><option>Formation</option>
               </select>
-
-              <textarea
-                required
-                placeholder="Votre message..."
-                value={form.message}
-                onChange={update("message")}
-                rows={4}
-                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
-              />
-
+              <textarea required placeholder="Votre message..." value={form.message} onChange={update("message")} rows={4} style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }} />
               <div>
-                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
-                  <Paperclip size={14} />
-                  Pièce jointe (optionnel)
-                </label>
-                <input
-                  type="file"
-                  onChange={(e) => setFileName(e.target.files?.[0]?.name || "")}
-                  style={{ fontSize: "13px" }}
-                />
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}><Paperclip size={14} />Pièce jointe (optionnel)</label>
+                <input type="file" onChange={(e) => setFileName(e.target.files?.[0]?.name || "")} style={{ fontSize: "13px" }} />
               </div>
-
               {error && <p style={{ color: "#C0392B", fontSize: "13px" }}>{error}</p>}
+              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>{submitting ? "Envoi…" : "Envoyer"}</button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
-              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>
-                {submitting ? "Envoi…" : "Envoyer"}
-              </button>
+function MachineRegistrationForm({ category, onClose }) {
+  const [form, setForm] = useState({ nom: "", prenom: "", email: "", clientFinal: "", adresse: "", machine: "", numeroSerie: "", reference: "", garantie: "", message: "" });
+  const [ficheMiseEnRoute, setFicheMiseEnRoute] = useState("");
+  const [photosInstallation, setPhotosInstallation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
+  const [sent, setSent] = useState(false);
+  const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const destinataire = SERVICE_EMAILS[category?.label] || SERVICE_EMAILS["Garantie"];
+      await addDoc(collection(db, "machineRegistrations"), { ...form, destinataire, ficheMiseEnRoute: ficheMiseEnRoute || null, photosInstallation: photosInstallation || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp() });
+      await fetch(APPS_SCRIPT_URL, {
+        method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ ...form, destinataire, type: "Enregistrement Machine", categorie: category?.label || "", ficheMiseEnRoute: ficheMiseEnRoute || "Aucune", photosInstallation: photosInstallation || "Aucune" }),
+      });
+      setSent(true);
+    } catch {
+      setError("Impossible d'envoyer votre demande pour l'instant. Réessayez.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "480px", width: "100%", maxHeight: "90vh", overflow: "auto", padding: "28px", position: "relative" }}>
+        <button onClick={onClose} aria-label="Fermer" style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={20} /></button>
+        {sent ? (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: 700, marginBottom: "10px" }}>Machine enregistrée</h2>
+            <p style={{ color: COLORS.textMuted, fontSize: "14px", marginBottom: "20px" }}>Votre enregistrement a bien été pris en compte.</p>
+            <button onClick={onClose} style={primaryBtnStyle}>Fermer</button>
+          </div>
+        ) : (
+          <>
+            <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "18px" }}>Enregistrement Machine</h2>
+            <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <input required placeholder="Nom" value={form.nom} onChange={update("nom")} style={formInputStyle} />
+              <input required placeholder="Prénom" value={form.prenom} onChange={update("prenom")} style={formInputStyle} />
+              <input required type="email" placeholder="E-mail" value={form.email} onChange={update("email")} style={formInputStyle} />
+              <input required placeholder="Nom du client final" value={form.clientFinal} onChange={update("clientFinal")} style={formInputStyle} />
+              <input required placeholder="Adresse postale" value={form.adresse} onChange={update("adresse")} style={formInputStyle} />
+              <FieldWithTooltip placeholder="Machine" value={form.machine} onChange={update("machine")} tooltip="Le modèle exact de la machine concernée (ex. CSDX SFC)." />
+              <FieldWithTooltip placeholder="N° Série" value={form.numeroSerie} onChange={update("numeroSerie")} tooltip="Le numéro de série figure sur la plaque signalétique de la machine." />
+              <FieldWithTooltip placeholder="Référence" value={form.reference} onChange={update("reference")} tooltip="Une référence interne de commande ou de dossier, si vous en avez une." />
+              <select required value={form.garantie} onChange={update("garantie")} style={formInputStyle}>
+                <option value="" disabled>Garantie</option>
+                <option>Garantie standard</option>
+                <option>Garantie étendue</option>
+              </select>
+              <textarea placeholder="Votre message..." value={form.message} onChange={update("message")} rows={4} style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }} />
+              <div>
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Fiche mise en route</label>
+                <input type="file" onChange={(e) => setFicheMiseEnRoute(e.target.files?.[0]?.name || "")} style={{ fontSize: "13px" }} />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>Photos d'installation</label>
+                <input type="file" onChange={(e) => setPhotosInstallation(e.target.files?.[0]?.name || "")} style={{ fontSize: "13px" }} />
+              </div>
+              {error && <p style={{ color: "#C0392B", fontSize: "13px" }}>{error}</p>}
+              <button type="submit" disabled={submitting} style={{ ...primaryBtnStyle, opacity: submitting ? 0.7 : 1, marginTop: "8px" }}>{submitting ? "Envoi…" : "Envoyer"}</button>
             </form>
           </>
         )}
@@ -832,44 +605,13 @@ function FieldWithTooltip({ tooltip, ...inputProps }) {
   return (
     <div style={{ position: "relative" }}>
       <input required {...inputProps} style={{ ...formInputStyle, paddingRight: "36px" }} />
-      <span
-        title={tooltip}
-        style={{
-          position: "absolute",
-          right: "10px",
-          top: "50%",
-          transform: "translateY(-50%)",
-          color: COLORS.textMuted,
-          cursor: "help",
-          display: "flex",
-        }}
-      >
-        <HelpCircle size={16} />
-      </span>
+      <span title={tooltip} style={{ position: "absolute", right: "10px", top: "50%", transform: "translateY(-50%)", color: COLORS.textMuted, cursor: "help", display: "flex" }}><HelpCircle size={16} /></span>
     </div>
   );
 }
 
-const formInputStyle = {
-  width: "100%",
-  padding: "12px 14px",
-  borderRadius: "8px",
-  border: `1px solid ${COLORS.cardBorder}`,
-  fontSize: "14px",
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const primaryBtnStyle = {
-  background: COLORS.gold,
-  color: COLORS.navy,
-  border: "none",
-  borderRadius: "10px",
-  padding: "14px 20px",
-  fontSize: "13px",
-  fontWeight: 700,
-  cursor: "pointer",
-};
+const formInputStyle = { width: "100%", padding: "12px 14px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, fontSize: "14px", outline: "none", boxSizing: "border-box" };
+const primaryBtnStyle = { background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, cursor: "pointer" };
 
 function PdfViewer({ doc, onClose }) {
   const [numPages, setNumPages] = useState(null);
@@ -877,157 +619,40 @@ function PdfViewer({ doc, onClose }) {
   const [showOutline, setShowOutline] = useState(true);
   const [hasOutline, setHasOutline] = useState(true);
   const [rotation, setRotation] = useState(0);
-
-  useEffect(() => {
-    const block = (e) => e.preventDefault();
-    document.addEventListener("contextmenu", block);
-    return () => document.removeEventListener("contextmenu", block);
-  }, []);
-
+  useEffect(() => { const block = (e) => e.preventDefault(); document.addEventListener("contextmenu", block); return () => document.removeEventListener("contextmenu", block); }, []);
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(11,31,58,0.85)",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "14px 20px",
-          background: COLORS.navy,
-          color: "#FFFFFF",
-        }}
-      >
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.85)", display: "flex", flexDirection: "column", zIndex: 1000 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: COLORS.navy, color: "#FFFFFF" }}>
         <span style={{ fontSize: "14px", fontWeight: 600 }}>{doc.name}</span>
-
         <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <button
-            onClick={() => setShowOutline((s) => !s)}
-            style={{ ...navBtnStyle, background: showOutline ? COLORS.gold : "rgba(255,255,255,0.15)" }}
-            aria-label="Afficher les signets"
-            title="Signets"
-          >
-            <PanelLeft size={16} color={showOutline ? COLORS.navy : "#FFFFFF"} />
-          </button>
-
+          <button onClick={() => setShowOutline((s) => !s)} style={{ ...navBtnStyle, background: showOutline ? COLORS.gold : "rgba(255,255,255,0.15)" }} title="Signets"><PanelLeft size={16} color={showOutline ? COLORS.navy : "#FFFFFF"} /></button>
           {numPages && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
-              <button
-                onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                disabled={pageNumber <= 1}
-                style={navBtnStyle}
-                aria-label="Page précédente"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span>
-                Page {pageNumber} / {numPages}
-              </span>
-              <button
-                onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
-                disabled={pageNumber >= numPages}
-                style={navBtnStyle}
-                aria-label="Page suivante"
-              >
-                <ChevronRight size={16} />
-              </button>
+              <button onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1} style={navBtnStyle}><ChevronLeft size={16} /></button>
+              <span>Page {pageNumber} / {numPages}</span>
+              <button onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages} style={navBtnStyle}><ChevronRight size={16} /></button>
             </div>
           )}
-
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button
-              onClick={() => setRotation((r) => (r - 90 + 360) % 360)}
-              style={navBtnStyle}
-              aria-label="Pivoter vers la gauche"
-              title="Pivoter à gauche"
-            >
-              <RotateCcw size={16} />
-            </button>
-            <button
-              onClick={() => setRotation((r) => (r + 90) % 360)}
-              style={navBtnStyle}
-              aria-label="Pivoter vers la droite"
-              title="Pivoter à droite"
-            >
-              <RotateCw size={16} />
-            </button>
+            <button onClick={() => setRotation((r) => (r - 90 + 360) % 360)} style={navBtnStyle} title="Pivoter à gauche"><RotateCcw size={16} /></button>
+            <button onClick={() => setRotation((r) => (r + 90) % 360)} style={navBtnStyle} title="Pivoter à droite"><RotateCw size={16} /></button>
           </div>
-
-          <button onClick={onClose} style={closeBtnStyle}>
-            <X size={16} />
-            Fermer
-          </button>
+          <button onClick={onClose} style={closeBtnStyle}><X size={16} />Fermer</button>
         </div>
       </div>
-
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        <Document
-          file={doc.url}
-          onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
-          loading={<p style={{ color: "#FFFFFF", padding: "24px" }}>Chargement du document…</p>}
-          error={<p style={{ color: "#FFFFFF", padding: "24px" }}>Impossible d'afficher ce PDF.</p>}
-        >
+        <Document file={doc.url} onLoadSuccess={(pdf) => setNumPages(pdf.numPages)} loading={<p style={{ color: "#FFFFFF", padding: "24px" }}>Chargement du document…</p>} error={<p style={{ color: "#FFFFFF", padding: "24px" }}>Impossible d'afficher ce PDF.</p>}>
           <div style={{ display: "flex", flex: 1, height: "100%" }}>
-          {showOutline && (
-            <div
-              style={{
-                width: "260px",
-                flexShrink: 0,
-                overflow: "auto",
-                background: "#FFFFFF",
-                borderRight: `1px solid ${COLORS.cardBorder}`,
-                padding: "16px",
-              }}
-            >
-              <h4
-                style={{
-                  fontSize: "11px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: COLORS.textMuted,
-                  marginBottom: "10px",
-                }}
-              >
-                Signets
-              </h4>
-              <Outline
-                onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))}
-                onItemClick={({ pageNumber: pn }) => setPageNumber(pn)}
-              />
-              {!hasOutline && (
-                <p style={{ fontSize: "12px", color: COLORS.textMuted }}>
-                  Ce PDF ne contient pas de signets.
-                </p>
-              )}
+            {showOutline && (
+              <div style={{ width: "260px", flexShrink: 0, overflow: "auto", background: "#FFFFFF", borderRight: `1px solid ${COLORS.cardBorder}`, padding: "16px" }}>
+                <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>Signets</h4>
+                <div style={{ fontSize: "12px", lineHeight: 1.5 }}><Outline onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))} onItemClick={({ pageNumber: pn }) => setPageNumber(pn)} /></div>
+                {!hasOutline && <p style={{ fontSize: "12px", color: COLORS.textMuted }}>Ce PDF ne contient pas de signets.</p>}
+              </div>
+            )}
+            <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", padding: "24px", background: "#5A5A5A" }}>
+              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))} />
             </div>
-          )}
-
-          <div
-            onContextMenu={(e) => e.preventDefault()}
-            style={{
-              flex: 1,
-              overflow: "auto",
-              display: "flex",
-              justifyContent: "center",
-              padding: "24px",
-              background: "#5A5A5A",
-            }}
-          >
-            <Page
-              pageNumber={pageNumber}
-              rotate={rotation}
-              renderAnnotationLayer={false}
-              renderTextLayer={false}
-              width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))}
-            />
-          </div>
           </div>
         </Document>
       </div>
@@ -1035,54 +660,14 @@ function PdfViewer({ doc, onClose }) {
   );
 }
 
-function Card({ icon: Icon, image, label, description, iconColor, onClick }) {
+function Card({ icon: Icon, image, label, description, iconColor, onClick, imageSize }) {
+  const imgSize = imageSize || (description ? 120 : 140);
   return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        textAlign: "center",
-        gap: "14px",
-        padding: description ? "36px 20px" : "24px 14px",
-        minHeight: "300px",
-        borderRadius: "14px",
-        border: `1px solid ${COLORS.cardBorder}`,
-        background: "#FFFFFF",
-        color: COLORS.navy,
-        cursor: "pointer",
-        boxShadow: "0 1px 3px rgba(11,31,58,0.04)",
-        transition: "transform 0.15s ease, box-shadow 0.15s ease",
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.transform = "translateY(-3px)";
-        e.currentTarget.style.boxShadow = "0 8px 20px rgba(11,31,58,0.08)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.transform = "translateY(0)";
-        e.currentTarget.style.boxShadow = "0 1px 3px rgba(11,31,58,0.04)";
-      }}
-    >
-      {image ? (
-        <img
-          src={image}
-          alt=""
-          style={{ width: description ? 165 : 150, height: description ? 165 : 150, objectFit: "contain" }}
-        />
-      ) : (
-        <Icon size={description ? 40 : 34} color={iconColor || COLORS.gold} strokeWidth={1.6} />
-      )}
+    <button onClick={onClick} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: "14px", padding: description ? "22px 20px" : "20px 16px", borderRadius: "14px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", color: COLORS.navy, cursor: "pointer", boxShadow: "0 1px 3px rgba(11,31,58,0.04)", transition: "transform 0.15s ease, box-shadow 0.15s ease" }} onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = "0 8px 20px rgba(11,31,58,0.08)"; }} onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(11,31,58,0.04)"; }}>
+      {image ? <img src={image} alt="" style={{ width: imgSize, height: imgSize, objectFit: "contain" }} /> : <Icon size={description ? 26 : 28} color={iconColor || COLORS.gold} strokeWidth={1.6} />}
       <div>
-        <div style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em", textTransform: description ? "uppercase" : "none" }}>
-          {label}
-        </div>
-        {description && (
-          <div style={{ fontSize: "12.5px", color: COLORS.textMuted, marginTop: "6px" }}>
-            {description}
-          </div>
-        )}
+        <div style={{ fontSize: "14px", fontWeight: 700, letterSpacing: "0.01em", textTransform: description ? "uppercase" : "none" }}>{label}</div>
+        {description && <div style={{ fontSize: "12.5px", color: COLORS.textMuted, marginTop: "6px" }}>{description}</div>}
       </div>
     </button>
   );
@@ -1094,231 +679,39 @@ function LoginScreen({ kickedOut }) {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      setError(
-        err.code === "auth/invalid-credential" || err.code === "auth/wrong-password"
-          ? "E-mail ou mot de passe incorrect."
-          : err.code === "auth/user-not-found"
-          ? "Aucun compte trouvé avec cet e-mail."
-          : "Impossible de se connecter. Réessayez."
-      );
-    } finally {
-      setLoading(false);
-    }
+    try { await signInWithEmailAndPassword(auth, email, password); }
+    catch (err) { setError(err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" ? "E-mail ou mot de passe incorrect." : "Impossible de se connecter."); }
+    finally { setLoading(false); }
   };
-
   const handleForgotPassword = async () => {
-    if (!email) {
-      setError("Entrez votre e-mail ci-dessus, puis cliquez à nouveau sur ce lien.");
-      return;
-    }
-    setError(null);
-    try {
-      await sendPasswordResetEmail(auth, email);
-      setResetSent(true);
-    } catch {
-      setError("Impossible d'envoyer l'e-mail de réinitialisation.");
-    }
+    if (!email) { setError("Entrez votre e-mail."); return; }
+    try { await sendPasswordResetEmail(auth, email); setResetSent(true); } catch { setError("Impossible d'envoyer l'e-mail."); }
   };
-
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "20px",
-        background: COLORS.bg,
-        fontFamily: "'Inter', system-ui, sans-serif",
-        padding: "20px",
-      }}
-    >
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "20px", background: COLORS.bg, padding: "20px" }}>
       <img src={logo} alt="Kaeser Compresseurs" style={{ height: "70px", width: "auto" }} />
-
-      {kickedOut && (
-        <p style={alertStyle}>
-          Vous avez été déconnecté(e) car ce compte a été utilisé sur un autre appareil.
-        </p>
-      )}
-
-      {resetSent && (
-        <p style={{ ...alertStyle, background: "#EAF7EE", color: "#1E7A34" }}>
-          E-mail envoyé — suivez le lien reçu pour définir votre mot de passe, puis revenez vous connecter ici.
-        </p>
-      )}
-
+      {kickedOut && <p style={alertStyle}>Vous avez été déconnecté(e) car ce compte a été utilisé sur un autre appareil.</p>}
+      {resetSent && <p style={{ ...alertStyle, background: "#EAF7EE", color: "#1E7A34" }}>E-mail envoyé.</p>}
       {error && <p style={alertStyle}>{error}</p>}
-
-      <form
-        onSubmit={handleSubmit}
-        style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "320px" }}
-      >
-        <input
-          type="email"
-          placeholder="votre.email@kaeser.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          style={inputStyle}
-        />
-        <input
-          type="password"
-          placeholder="Mot de passe"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          style={inputStyle}
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            background: COLORS.gold,
-            color: COLORS.navy,
-            border: "none",
-            borderRadius: "10px",
-            padding: "14px 28px",
-            fontSize: "14px",
-            fontWeight: 700,
-            cursor: loading ? "default" : "pointer",
-            opacity: loading ? 0.7 : 1,
-          }}
-        >
-          {loading ? "Connexion…" : "Se connecter"}
-        </button>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "10px", width: "100%", maxWidth: "320px" }}>
+        <input type="email" placeholder="votre.email@kaeser.com" value={email} onChange={(e) => setEmail(e.target.value)} required style={inputStyle} />
+        <input type="password" placeholder="Mot de passe" value={password} onChange={(e) => setPassword(e.target.value)} required style={inputStyle} />
+        <button type="submit" disabled={loading} style={{ background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 28px", fontSize: "14px", fontWeight: 700, cursor: "pointer" }}>{loading ? "Connexion…" : "Se connecter"}</button>
       </form>
-
-      <button
-        onClick={handleForgotPassword}
-        style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}
-      >
-        Mot de passe oublié / première connexion
-      </button>
-
-      <p style={{ color: COLORS.textMuted, fontSize: "12px", maxWidth: "320px", textAlign: "center" }}>
-        Cette application est réservée aux utilisateurs autorisés par l'administrateur.
-      </p>
+      <button onClick={handleForgotPassword} style={{ background: "none", border: "none", color: COLORS.textMuted, fontSize: "13px", cursor: "pointer", textDecoration: "underline" }}>Mot de passe oublié</button>
     </div>
   );
 }
 
-const alertStyle = {
-  background: "#FBE9E7",
-  color: "#C0392B",
-  fontSize: "13px",
-  padding: "10px 16px",
-  borderRadius: "8px",
-  maxWidth: "320px",
-  textAlign: "center",
-};
-
-const inputStyle = {
-  padding: "12px 14px",
-  borderRadius: "8px",
-  border: `1px solid ${COLORS.cardBorder}`,
-  fontSize: "14px",
-  outline: "none",
-};
-
-const gridStyle = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 240px))",
-  gap: "18px",
-  maxWidth: "1100px",
-  margin: "0 auto",
-  justifyContent: "center"
-};
-
-const searchWrapStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  maxWidth: "480px",
-  marginLeft: "auto",
-  marginRight: "auto",
-  marginBottom: "28px",
-  padding: "12px 16px",
-  borderRadius: "10px",
-  border: `1px solid ${COLORS.cardBorder}`,
-  background: "#FFFFFF",
-};
-
-const searchInputStyle = {
-  flex: 1,
-  border: "none",
-  outline: "none",
-  fontSize: "14px",
-  color: COLORS.navy,
-  background: "transparent",
-};
-
-const selectStyle = {
-  flex: 1,
-  padding: "0 14px",
-  height: "42px",
-  borderRadius: "10px",
-  border: `1px solid ${COLORS.cardBorder}`,
-  background: "#FFFFFF",
-  color: COLORS.navy,
-  fontSize: "13px",
-};
-
-const docLinkStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "10px",
-  padding: "12px 14px",
-  borderRadius: "10px",
-  border: `1px solid ${COLORS.cardBorder}`,
-  background: "#FFFFFF",
-  color: COLORS.navy,
-  textDecoration: "none",
-  transition: "border-color 0.15s ease",
-};
-
-const navBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  background: "rgba(255,255,255,0.15)",
-  border: "none",
-  color: "#FFFFFF",
-  cursor: "pointer",
-  padding: "6px",
-  borderRadius: "6px",
-};
-
-const closeBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "6px",
-  background: "rgba(255,255,255,0.15)",
-  border: "none",
-  color: "#FFFFFF",
-  fontSize: "13px",
-  cursor: "pointer",
-  padding: "6px 12px",
-  borderRadius: "8px",
-};
-
-const backBtnStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "4px",
-  background: "rgba(255,255,255,0.15)",
-  border: "none",
-  color: "#FFFFFF",
-  fontSize: "13px",
-  cursor: "pointer",
-  padding: "6px 10px",
-  borderRadius: "8px",
-};
+const alertStyle = { background: "#FBE9E7", color: "#C0392B", fontSize: "13px", padding: "10px 16px", borderRadius: "8px", maxWidth: "320px", textAlign: "center" };
+const inputStyle = { padding: "12px 14px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, fontSize: "14px", outline: "none" };
+const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 240px))", gap: "18px", maxWidth: "1560px", margin: "0 auto", justifyContent: "center" };
+const searchWrapStyle = { display: "flex", alignItems: "center", gap: "10px", maxWidth: "480px", marginLeft: "auto", marginRight: "auto", marginBottom: "28px", padding: "12px 16px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF" };
+const searchInputStyle = { flex: 1, border: "none", outline: "none", fontSize: "14px", color: COLORS.navy, background: "transparent" };
+const selectStyle = { width: "320px", flexShrink: 0, padding: "0 14px", height: "42px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", color: COLORS.navy, fontSize: "13px" };
+const navBtnStyle = { display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.15)", border: "none", color: "#FFFFFF", cursor: "pointer", padding: "6px", borderRadius: "6px" };
+const closeBtnStyle = { display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.15)", border: "none", color: "#FFFFFF", fontSize: "13px", cursor: "pointer", padding: "6px 12px", borderRadius: "8px" };
