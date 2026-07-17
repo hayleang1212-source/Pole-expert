@@ -158,8 +158,8 @@ const CATEGORIES = [
         items: [
           { id: "sigma-scb", label: "SIGMA CONTROL BASIC", icon: MonitorSmartphone, image: imgSigmaScb, driveFolderIdCodesDefaut: "1Qhv79NL1RaAw-J1oR4uUbTfeqbjZmX7C", driveFolderIdInstructionTechnique: "1lrCFIdbOxnHZo5Mdtd7Ycs6k0xW-Zprj" },
           { id: "sigma-sc1", label: "SIGMA CONTROL 1", icon: MonitorSmartphone, image: imgSigmaSc1, driveFolderId: "1_-Y7puS8dMZDyAzzQwJkAHrOxvONsx50", driveFolderIdCommunication: "18y9gRyp4i12I6MUA32sbcf7qzL9eyreY" },
-          { id: "sigma-sc2", label: "SIGMA CONTROL 2", icon: MonitorSmartphone, image: imgSigmaSc2, driveFolderId: "179_lD8DVt5RHBMxCEk28Szyeyz2iQ3qw", driveFolderIdCodesDefaut: "1mTt31_Kzc17wIWHVsQxay4aPi3IFvOxN", driveFolderIdCommunication: "1QjspPJ9dln1GzAMjzU0lK_9CrK82Sptn", driveFolderIdUpdate: "1hyQeeah1J_6qdSBz2YmI6qKkpGe7jGNw", driveFolderIdInstructionTechnique: "1VVNszF7ZH3bmjtGdZRfdmB20SHwFKUCa", simulateurUrl: "https://i0070916-p50100-c1-hc3fe5i5e5rdxznzctpjng5mx4sqx66dr.webdirect.mdex.de/index.html" },
-          { id: "sigma-sc3", label: "SIGMA CONTROL 3", icon: MonitorSmartphone, image: imgSigmaSc3, driveFolderId: "1-idZVZsifWbGz3wViU0rABYiKTqkN6Lr", driveFolderIdCodesDefaut: "1PqOMKKr2GeUnIfp2DscllnaQ_L-NFU43", driveFolderIdCommunication: "1P2SxMX7nIoZoT2B1RpqsykVMoKORHffN", driveFolderIdInstructionTechnique: "1wQeZ3YZdmfTCyZ2bCMZC1Tj-o9ur0lzW", driveFolderIdUpdate: "1CtId3no7x1whbTIef05hE4y1LnvBSFgZ" },
+          { id: "sigma-sc2", label: "SIGMA CONTROL 2", icon: MonitorSmartphone, image: imgSigmaSc2, driveFolderId: "179_lD8DVt5RHBMxCEk28Szyeyz2iQ3qw", driveFolderIdCodesDefaut: "1mTt31_Kzc17wIWHVsQxay4aPi3IFvOxN", driveFolderIdCommunication: "1QjspPJ9dln1GzAMjzU0lK_9CrK82Sptn", driveFolderIdUpdate: "1hyQeeah1J_6qdSBz2YmI6qKkpGe7jGNw", driveFolderIdInstructionTechnique: "1VVNszF7ZH3bmjtGdZRfdmB20SHwFKUCa", simulateurUrl: "https://i0070916-p50100-c1-hc3fe5i5e5rdxznzctpjng5mx4sqx66dr.webdirect.mdex.de/index.html", simulateurLabel: "Simulateur SC 2" },
+          { id: "sigma-sc3", label: "SIGMA CONTROL 3", icon: MonitorSmartphone, image: imgSigmaSc3, driveFolderId: "1-idZVZsifWbGz3wViU0rABYiKTqkN6Lr", driveFolderIdCodesDefaut: "1PqOMKKr2GeUnIfp2DscllnaQ_L-NFU43", driveFolderIdCommunication: "1P2SxMX7nIoZoT2B1RpqsykVMoKORHffN", driveFolderIdInstructionTechnique: "1wQeZ3YZdmfTCyZ2bCMZC1Tj-o9ur0lzW", driveFolderIdUpdate: "1CtId3no7x1whbTIef05hE4y1LnvBSFgZ", simulateurUrl: "https://i0190606-guacamole.direct.mdex.de/guacamole/#/", simulateurLabel: "Simulateur SC 3", simulateurCredentials: { username: "KAESER-SC3", password: "SigmaControl3" } },
           { id: "sigma-scm", label: "SIGMA CONTROL MOBILE", icon: MonitorSmartphone, image: imgSigmaScm, driveFolderId: "1lIhU9S5N4cSX5RBecrdROMwn7tHagZIi", driveFolderIdCodesDefaut: "12cBjWHm8gQ6mQPTwVZ83GgbPx4a0UE4X", driveFolderIdUpdate: "1Xh_sSns43pWKGi09Bf6hoae2vAyBuwzA", driveFolderIdInstructionTechnique: "1re_FkgT4jFWvPpZ97X8mcwqidJ6uGD-s" },
         ],
       },
@@ -399,10 +399,18 @@ function DetailPage({ category, item }) {
         )}
         <div style={{ display: "flex", justifyContent: "flex-start", gap: "14px", flexWrap: "wrap", marginTop: "28px" }}>
           {item.simulateurUrl && (
-            <button onClick={() => setShowSimulator(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
-              Simulateur SC 2
-              <MonitorSmartphone size={16} />
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <button onClick={() => setShowSimulator(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
+                {item.simulateurLabel || "Simulateur"}
+                <MonitorSmartphone size={16} />
+              </button>
+              {item.simulateurCredentials && (
+                <div style={{ fontSize: "12.5px", color: COLORS.textMuted, lineHeight: 1.6 }}>
+                  <div>Username: {item.simulateurCredentials.username}</div>
+                  <div>Password: {item.simulateurCredentials.password}</div>
+                </div>
+              )}
+            </div>
           )}
           <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
             Une question ? Contactez nos experts
@@ -411,7 +419,7 @@ function DetailPage({ category, item }) {
         </div>
       </div>
       {showExpertForm && <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />}
-      {showSimulator && <SimulatorViewer url={item.simulateurUrl} title="Simulateur SC 2" onClose={() => setShowSimulator(false)} />}
+      {showSimulator && <SimulatorViewer url={item.simulateurUrl} title={item.simulateurLabel || "Simulateur"} onClose={() => setShowSimulator(false)} />}
     </div>
   );
 }
