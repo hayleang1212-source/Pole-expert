@@ -189,9 +189,9 @@ const CATEGORIES = [
     icon: Package,
     image: iconPiecesDetachees,
     items: [
-      { id: "recherche", label: "Rechercher une pièce", icon: Search },
-      { id: "catalogue", label: "Catalogue", icon: PackageSearch },
-      { id: "commande", label: "Suivi de commande", icon: ClipboardList },
+      { id: "recherche", label: "Rechercher une pièce", icon: Search, simulateurUrl: "https://portal.kaeserglobal.kaeser.com/irj/portal#EP-621543817-KAESER_Service_Shop", simulateurLabel: "Service Shop Kaeser" },
+      { id: "catalogue", label: "Catalogue", icon: PackageSearch, simulateurUrl: "https://portal.kaeserglobal.kaeser.com/irj/portal#EP-621543817-KAESER_Service_Shop", simulateurLabel: "Service Shop Kaeser" },
+      { id: "commande", label: "Suivi de commande", icon: ClipboardList, simulateurUrl: "https://portal.kaeserglobal.kaeser.com/irj/portal#EP-621543817-KAESER_Service_Shop", simulateurLabel: "Service Shop Kaeser" },
     ],
   },
   {
@@ -359,9 +359,28 @@ function SubMenu({ category, onSelect }) {
   );
 }
 
+function SimulateurButton({ item, onOpen }) {
+  if (!item.simulateurUrl) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <button onClick={onOpen} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" }}>
+        {item.simulateurLabel || "Simulateur"}
+        <MonitorSmartphone size={16} />
+      </button>
+      {item.simulateurCredentials && (
+        <div style={{ fontSize: "12.5px", color: COLORS.textMuted, lineHeight: 1.6 }}>
+          <div>Username: {item.simulateurCredentials.username}</div>
+          <div>Password: {item.simulateurCredentials.password}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DetailPage({ category, item }) {
   const [showExpertForm, setShowExpertForm] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
+  const simulateurInNoticeRow = Boolean(item.simulateurUrl && item.driveFolderId);
   return (
     <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start", maxWidth: "1200px" }}>
       <div style={{ flex: "0 0 300px" }}>
@@ -381,7 +400,12 @@ function DetailPage({ category, item }) {
         ) : (
           <>
             {item.driveFolderId && (
-              <DocumentSection label="Notice d'utilisation" driveFolderId={item.driveFolderId} localFolderId={item.id} />
+              <div style={{ display: "flex", gap: "18px", alignItems: "flex-end", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: "260px" }}>
+                  <DocumentSection label="Notice d'utilisation" driveFolderId={item.driveFolderId} localFolderId={item.id} />
+                </div>
+                {simulateurInNoticeRow && <SimulateurButton item={item} onOpen={() => setShowSimulator(true)} />}
+              </div>
             )}
             {item.driveFolderIdCodesDefaut && (
               <DocumentSection label="Codes défaut" driveFolderId={item.driveFolderIdCodesDefaut} localFolderId={`${item.id}/codes-defaut`} />
@@ -397,21 +421,8 @@ function DetailPage({ category, item }) {
             )}
           </>
         )}
-        <div style={{ display: "flex", justifyContent: "flex-start", gap: "14px", flexWrap: "wrap", marginTop: "28px" }}>
-          {item.simulateurUrl && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <button onClick={() => setShowSimulator(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
-                {item.simulateurLabel || "Simulateur"}
-                <MonitorSmartphone size={16} />
-              </button>
-              {item.simulateurCredentials && (
-                <div style={{ fontSize: "12.5px", color: COLORS.textMuted, lineHeight: 1.6 }}>
-                  <div>Username: {item.simulateurCredentials.username}</div>
-                  <div>Password: {item.simulateurCredentials.password}</div>
-                </div>
-              )}
-            </div>
-          )}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "14px", flexWrap: "wrap", marginTop: "28px" }}>
+          {!simulateurInNoticeRow && <SimulateurButton item={item} onOpen={() => setShowSimulator(true)} />}
           <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer" }}>
             Une question ? Contactez nos experts
             <ArrowRight size={16} />
