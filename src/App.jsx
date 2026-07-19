@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby5oFSTJJoltdT2Cq1iEyXQ92RHPTN3BOj-AYq4bIcxgwe73TRZtvNwtc4x0-5EhG2k1Q/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJKbnq340Vbnunl-Jbach66pCDqK2t0l39UjYKwyO7T_dLm4rddqE6RA2fSi8wUHIkg/exec";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 Mo
 
@@ -982,25 +982,55 @@ function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = 
 
 function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Technique" }) {
   const [form, setForm] = useState({ nom: "", prenom: "", email: "", machine: "", numeroSerie: "", reference: "", sujet: initialSujet, message: "" });
+  const hasCodesDefaut = Boolean(item?.driveFolderIdCodesDefaut);
+  const [typeProbleme, setTypeProbleme] = useState("autres"); // "codes_defaut" | "autres"
+  const [codeDefautChoisi, setCodeDefautChoisi] = useState("");
+  const [motifAutres, setMotifAutres] = useState("");
+  const [codesDefaut, setCodesDefaut] = useState([]);
+  const [loadingCodesDefaut, setLoadingCodesDefaut] = useState(false);
+  const [errorCodesDefaut, setErrorCodesDefaut] = useState(null);
   const [file, setFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  useEffect(() => {
+    if (typeProbleme !== "codes_defaut" || !hasCodesDefaut) return;
+    setLoadingCodesDefaut(true);
+    setErrorCodesDefaut(null);
+    getDriveFiles(item.driveFolderIdCodesDefaut, "pdf")
+      .then(setCodesDefaut)
+      .catch(() => setErrorCodesDefaut("Impossible de charger la liste des codes défaut."))
+      .finally(() => setLoadingCodesDefaut(false));
+  }, [typeProbleme, item, hasCodesDefaut]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (typeProbleme === "codes_defaut" && !codeDefautChoisi) {
+      setError("Veuillez sélectionner un code défaut.");
+      return;
+    }
+    if (typeProbleme === "autres" && !motifAutres.trim()) {
+      setError("Veuillez indiquer le motif de votre demande.");
+      return;
+    }
     setSubmitting(true);
     try {
+      const motifFinal = typeProbleme === "codes_defaut"
+        ? codeDefautChoisi.replace(/\.pdf$/i, "")
+        : motifAutres.trim();
+      const formAEnvoyer = { ...form, motif: motifFinal };
       const destinataire = SERVICE_EMAILS[form.sujet] || null;
       let pieceJointeUrl = null;
       if (file) {
         pieceJointeUrl = await uploadFileToDrive(file);
       }
-      const docRef = await addDoc(collection(db, "expertRequests"), { ...form, destinataire, pieceJointeNom: file?.name || null, pieceJointeUrl, produit: item?.label || category?.label || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp(), status: "En attente", archived: false });
+      const docRef = await addDoc(collection(db, "expertRequests"), { ...formAEnvoyer, destinataire, pieceJointeNom: file?.name || null, pieceJointeUrl, produit: item?.label || category?.label || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp(), status: "En attente", archived: false });
       await fetch(APPS_SCRIPT_URL, {
         method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ type: "nouvelle_demande", requestId: docRef.id, ...form, destinataire, produit: item?.label || category?.label || "", categorie: category?.label || "", pieceJointe: file?.name || "Aucune" }),
+        body: JSON.stringify({ type: "nouvelle_demande", requestId: docRef.id, ...formAEnvoyer, destinataire, produit: item?.label || category?.label || "", categorie: category?.label || "", pieceJointe: file?.name || "Aucune" }),
       });
       setSent(true);
     } catch (err) {
@@ -1032,7 +1062,57 @@ function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Te
               <select required value={form.sujet} onChange={update("sujet")} style={formInputStyle}>
                 <option>Support Technique</option><option>Garantie</option><option>Pièces détachées</option><option>Formation</option>
               </select>
-              <textarea required placeholder="Votre message..." value={form.message} onChange={update("message")} rows={4} style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }} />
+              {hasCodesDefaut && (
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: COLORS.navy, marginBottom: "6px", display: "block" }}>Motif</label>
+                  <select
+                    required
+                    value={typeProbleme}
+                    onChange={(e) => { setTypeProbleme(e.target.value); setCodeDefautChoisi(""); }}
+                    style={formInputStyle}
+                  >
+                    <option value="autres">Autres</option>
+                    <option value="codes_defaut">Codes défauts</option>
+                  </select>
+                </div>
+              )}
+              {typeProbleme === "codes_defaut" && hasCodesDefaut && (
+                <div>
+                  {loadingCodesDefaut && <p style={{ fontSize: "13px", color: COLORS.textMuted }}>Chargement des codes défaut…</p>}
+                  {errorCodesDefaut && <p style={{ fontSize: "13px", color: "#C0392B" }}>{errorCodesDefaut}</p>}
+                  {!loadingCodesDefaut && !errorCodesDefaut && codesDefaut.length > 0 && (
+                    <select required value={codeDefautChoisi} onChange={(e) => setCodeDefautChoisi(e.target.value)} style={formInputStyle}>
+                      <option value="" disabled>Sélectionner un code défaut…</option>
+                      {codesDefaut.map((c) => (
+                        <option key={c.id} value={c.name}>{c.name.replace(/\.pdf$/i, "")}</option>
+                      ))}
+                    </select>
+                  )}
+                  {!loadingCodesDefaut && !errorCodesDefaut && codesDefaut.length === 0 && (
+                    <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>Aucun code défaut disponible pour ce produit.</p>
+                  )}
+                </div>
+              )}
+              {typeProbleme === "autres" && (
+                <div>
+                  {!hasCodesDefaut && <label style={{ fontSize: "12px", fontWeight: 700, color: COLORS.navy, marginBottom: "6px", display: "block" }}>Motif</label>}
+                  <input
+                    required
+                    type="text"
+                    placeholder="Motif de votre demande"
+                    value={motifAutres}
+                    onChange={(e) => setMotifAutres(e.target.value)}
+                    style={formInputStyle}
+                  />
+                </div>
+              )}
+              <textarea
+                placeholder="Votre message (informations complémentaires, optionnel)..."
+                value={form.message}
+                onChange={update("message")}
+                rows={4}
+                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
+              />
               <div>
                 <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}><Paperclip size={14} />Pièce jointe (optionnel)</label>
                 <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ fontSize: "13px" }} />
@@ -1348,6 +1428,7 @@ function formatRequestDate(ts) {
 function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
   const isProcessed = !!request.archived;
   const [reponse, setReponse] = useState("");
+  const [reponseFile, setReponseFile] = useState(null);
   const canSend = reponse.trim().length > 0;
   return (
     <div style={{ padding: "14px 16px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: isProcessed ? "#FAFAF8" : "#FFFFFF" }}>
@@ -1371,6 +1452,7 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
         {isAdmin && <span><strong>Demandeur :</strong> {request.prenom} {request.nom} ({request.requestedBy || request.email})</span>}
         {request.machine && <span><strong>Machine :</strong> {request.machine}{request.numeroSerie ? ` — N° série ${request.numeroSerie}` : ""}</span>}
         {request.categorie && <span><strong>Catégorie :</strong> {request.categorie}</span>}
+        {request.motif && <span><strong>Motif :</strong> {request.motif}</span>}
         {request.message && <span style={{ color: COLORS.textMuted, marginTop: "4px" }}>{request.message}</span>}
       </div>
       {request.pieceJointeUrl && (
@@ -1384,6 +1466,11 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
             <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "8px", background: "#FFFFFF", border: `1px solid ${COLORS.cardBorder}` }}>
               <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", color: COLORS.textMuted }}>Réponse envoyée</span>
               <p style={{ fontSize: "13px", color: COLORS.navy, marginTop: "4px", whiteSpace: "pre-wrap" }}>{request.reponse}</p>
+              {request.reponsePieceJointeUrl && (
+                <a href={request.reponsePieceJointeUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "12.5px", fontWeight: 700, color: COLORS.goldDark, textDecoration: "none" }}>
+                  <Paperclip size={13} />{request.reponsePieceJointeNom || "Pièce jointe"}<Download size={13} />
+                </a>
+              )}
             </div>
           )}
           {request.processedAt && (
@@ -1405,8 +1492,14 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
             rows={3}
             style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
           />
+          <div>
+            <label style={{ fontSize: "11.5px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+              <Paperclip size={13} />Pièce jointe (optionnel)
+            </label>
+            <input type="file" onChange={(e) => setReponseFile(e.target.files?.[0] || null)} style={{ fontSize: "13px" }} />
+          </div>
           <button
-            onClick={() => onArchive(request, reponse.trim())}
+            onClick={() => onArchive(request, reponse.trim(), reponseFile)}
             disabled={archiving || !canSend}
             title={!canSend ? "Écrivez une réponse avant de traiter la demande" : undefined}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "8px", padding: "10px 14px", fontSize: "12.5px", fontWeight: 700, cursor: canSend ? "pointer" : "not-allowed", opacity: archiving || !canSend ? 0.6 : 1 }}
@@ -1446,14 +1539,24 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
     }
   };
 
-  const handleArchive = async (request, reponse) => {
+  const handleArchive = async (request, reponse, file) => {
     setError(null);
     setArchivingId(request.id);
     try {
+      let reponsePieceJointeUrl = null;
+      if (file) {
+        try {
+          reponsePieceJointeUrl = await uploadFileToDrive(file);
+        } catch {
+          setError("La pièce jointe n'a pas pu être envoyée. La réponse va tout de même être envoyée sans elle.");
+        }
+      }
       await updateDoc(doc(db, "expertRequests", request.id), {
         archived: true,
         status: "Traitée",
         reponse,
+        reponsePieceJointeUrl: reponsePieceJointeUrl || null,
+        reponsePieceJointeNom: reponsePieceJointeUrl ? file?.name || null : null,
         processedAt: serverTimestamp(),
         processedBy: currentUserEmail,
       });
@@ -1469,8 +1572,9 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
             sujet: request.sujet,
             produit: request.produit || "",
             machine: request.machine || "",
-            messageOriginal: request.message || "",
+            messageOriginal: [request.motif ? `Motif : ${request.motif}` : "", request.message || ""].filter(Boolean).join("\n\n"),
             reponse,
+            pieceJointe: reponsePieceJointeUrl ? file?.name || "Pièce jointe" : "Aucune",
             traitePar: currentUserEmail,
           }),
         });
