@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyqJKbnq340Vbnunl-Jbach66pCDqK2t0l39UjYKwyO7T_dLm4rddqE6RA2fSi8wUHIkg/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjNhPj6hnXm1fuAFtRIh1mGYwX0YzRQ2i7wP26FGdoaXCwYI8FdxR2A4JCVbpoWvxzjw/exec";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 Mo
 
