@@ -127,6 +127,9 @@ async function getDriveDocuments(folderId) {
   return getDriveFiles(folderId, null);
 }
 
+// Dossier Drive contenant le PDF "Conditions générales de vente et de garantie"
+const GARANTIE_CGV_FOLDER_ID = "1lJ1Lnpj1veKBcqLgbGTZYP8f7-6R_dx_";
+
 // --- Notifications de nouveaux documents PDF ---
 
 const DRIVE_FOLDER_LABELS = {
@@ -671,7 +674,12 @@ function SubMenu({ category, onSelect }) {
           </div>
           {category.searchable && filteredItems.length === 0 && <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>Aucun résultat pour « {query} ».</p>}
           {category.id === "garantie" && (
-            <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer", maxWidth: "480px", marginTop: "22px" }}>
+            <div style={{ marginTop: "22px" }}>
+              <GarantieCgvButton />
+            </div>
+          )}
+          {category.id === "garantie" && (
+            <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer", maxWidth: "480px", marginTop: "16px" }}>
               CONTACTER LE SERVICE GARANTIE
               <ArrowRight size={16} />
             </button>
@@ -918,6 +926,41 @@ function FormationDocumentList({ driveFolderId }) {
       ))}
       {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
     </div>
+  );
+}
+
+function GarantieCgvButton() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [viewingDoc, setViewingDoc] = useState(null);
+
+  const handleClick = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      const files = await getDriveFiles(GARANTIE_CGV_FOLDER_ID, "pdf");
+      if (files.length === 0) throw new Error("Aucun document trouvé.");
+      setViewingDoc(files[0]);
+    } catch {
+      setError("Impossible de charger le document pour l'instant.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        onClick={handleClick}
+        disabled={loading}
+        style={{ display: "flex", alignItems: "center", gap: "10px", background: "#FFFFFF", border: `1px solid ${COLORS.cardBorder}`, borderRadius: "10px", padding: "12px 16px", fontSize: "13.5px", color: COLORS.navy, cursor: loading ? "not-allowed" : "pointer", textAlign: "left", maxWidth: "480px" }}
+      >
+        <FileText size={16} color={COLORS.gold} style={{ flexShrink: 0 }} />
+        {loading ? "Chargement…" : "Conditions générales de vente et de garantie"}
+      </button>
+      {error && <p style={{ fontSize: "13px", color: "#C0392B", marginTop: "8px" }}>{error}</p>}
+      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+    </>
   );
 }
 
