@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzjNhPj6hnXm1fuAFtRIh1mGYwX0YzRQ2i7wP26FGdoaXCwYI8FdxR2A4JCVbpoWvxzjw/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxco9s-xafcaLN9vZaxkd4fyZRvIhQNOSVtrRUA-IitcB3hFF4089vcr4BYUMwDy8zb-g/exec";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 Mo
 
@@ -28,20 +28,22 @@ function fileToBase64(file) {
 // Envoie le fichier à l'Apps Script existant, qui l'enregistre dans un dossier
 // Google Drive dédié et renvoie son URL de partage. Gratuit : utilise le quota
 // Drive du compte Google propriétaire du script, pas de facturation Firebase.
-async function uploadFileToDrive(file) {
+async function uploadFileToDrive(file, folderId = null) {
   if (file.size > MAX_ATTACHMENT_SIZE) {
     throw new Error("Fichier trop volumineux (10 Mo maximum).");
   }
   const fileData = await fileToBase64(file);
+  const payload = {
+    type: folderId ? "upload_pdf_admin" : "upload_piece_jointe",
+    fileName: file.name,
+    mimeType: file.type || (folderId ? "application/pdf" : "application/octet-stream"),
+    fileData,
+  };
+  if (folderId) payload.folderId = folderId;
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({
-      type: "upload_piece_jointe",
-      fileName: file.name,
-      mimeType: file.type || "application/octet-stream",
-      fileData,
-    }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!data?.ok || !data?.fileUrl) throw new Error(data?.error || "Échec de l'upload.");
@@ -55,7 +57,7 @@ import {
   MonitorSmartphone, Cpu, SlidersHorizontal, Thermometer, Droplet,
   Component, PlugZap, Eye, X, ChevronRight, PanelLeft, RotateCcw, RotateCw, Settings,
   ArrowRight, Paperclip, Snowflake, Layers, SeparatorVertical, Filter, Waves, Droplets, ArrowDownToLine, Bell,
-  Archive, CheckCircle2, History, Inbox, Download, Send, Trash2
+  Archive, CheckCircle2, History, Inbox, Download, Send, Trash2, ZoomIn, ZoomOut, Upload
 } from "lucide-react";
 
 import logo from "./assets/logo-kaeser.png";
@@ -409,6 +411,7 @@ export default function App() {
   const firstLoginValidatedRef = useRef(false);
   const [expertRequests, setExpertRequests] = useState([]);
   const [showExpertRequestsModal, setShowExpertRequestsModal] = useState(false);
+  const [showAdminUploadModal, setShowAdminUploadModal] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
@@ -573,6 +576,11 @@ export default function App() {
               <span style={{ position: "absolute", top: "-6px", right: "-6px", minWidth: "18px", height: "18px", padding: "0 4px", borderRadius: "9px", background: "#C0392B", color: "#FFFFFF", fontSize: "11px", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}>{pendingExpertRequestsCount}</span>
             )}
           </button>
+          {isAdmin && (
+            <button onClick={() => setShowAdminUploadModal(true)} aria-label="Ajouter un document" title="Ajouter un document (admin)" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "38px", height: "38px", background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", cursor: "pointer", color: COLORS.navy }}>
+              <Upload size={18} />
+            </button>
+          )}
           <button onClick={() => signOut(auth)} style={{ fontSize: "13px", color: COLORS.navy, background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", padding: "8px 14px", cursor: "pointer" }}>Se déconnecter ({user.email})</button>
         </div>
       </div>
@@ -614,6 +622,9 @@ export default function App() {
           onClose={() => setShowExpertRequestsModal(false)}
         />
       )}
+      {isAdmin && showAdminUploadModal && (
+        <AdminUploadModal categories={CATEGORIES} onClose={() => setShowAdminUploadModal(false)} />
+      )}
     </div>
   );
 }
@@ -651,7 +662,7 @@ function SubMenu({ category, onSelect }) {
       )}
       {category.id === "formation" || category.id === "pieces-detachees" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
-          {category.id === "formation" && <FormationDocumentList driveFolderId={category.driveFolderId} />}
+          {category.id === "formation" && <FormationDocumentList driveFolderId={category.driveFolderId} categorie={category.label} />}
           <button onClick={() => setShowExpertForm(true)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, letterSpacing: "0.02em", textTransform: "uppercase", cursor: "pointer", maxWidth: "480px" }}>
             {category.id === "formation" ? "CONTACTER LE SERVICE FORMATION" : "CONTACTER LE SERVICE PIECES"}
             <ArrowRight size={16} />
@@ -675,7 +686,7 @@ function SubMenu({ category, onSelect }) {
           {category.searchable && filteredItems.length === 0 && <p style={{ color: COLORS.textMuted, fontSize: "14px" }}>Aucun résultat pour « {query} ».</p>}
           {category.id === "garantie" && (
             <div style={{ marginTop: "22px" }}>
-              <GarantieCgvButton />
+              <GarantieCgvButton categorie={category.label} />
             </div>
           )}
           {category.id === "garantie" && (
@@ -754,30 +765,30 @@ function DetailPage({ category, item }) {
       <div style={{ flex: 1, minWidth: "320px", maxWidth: "600px" }}>
         {item.id === "huile" ? (
           item.driveFolderIdInstructionTechnique && (
-            <DocumentSection label="Fiche de sécurité" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} />
+            <DocumentSection label="Fiche de sécurité" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} produit={item.label} categorie={category.label} />
           )
         ) : (
           <>
             {item.driveFolderId && (
-              <DocumentSection label="Notice d'utilisation" driveFolderId={item.driveFolderId} localFolderId={item.id} />
+              <DocumentSection label="Notice d'utilisation" driveFolderId={item.driveFolderId} localFolderId={item.id} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdCodesDefaut && (
-              <DocumentSection label="Codes défaut" driveFolderId={item.driveFolderIdCodesDefaut} localFolderId={`${item.id}/codes-defaut`} />
+              <DocumentSection label="Codes défaut" driveFolderId={item.driveFolderIdCodesDefaut} localFolderId={`${item.id}/codes-defaut`} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdCommunication && (
-              <DocumentSection label="Communication" driveFolderId={item.driveFolderIdCommunication} localFolderId={`${item.id}/communication`} forceDownload={true} />
+              <DocumentSection label="Communication" driveFolderId={item.driveFolderIdCommunication} localFolderId={`${item.id}/communication`} forceDownload={true} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdUpdate && (
-              <DocumentSection label="Update" driveFolderId={item.driveFolderIdUpdate} localFolderId={`${item.id}/update`} forceDownload={true} />
+              <DocumentSection label="Update" driveFolderId={item.driveFolderIdUpdate} localFolderId={`${item.id}/update`} forceDownload={true} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdInstructionTechnique && (
-              <DocumentSection label="Instruction technique" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} />
+              <DocumentSection label="Instruction technique" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdServiceInstruction && (
-              <DocumentSection label="Service instruction" driveFolderId={item.driveFolderIdServiceInstruction} localFolderId={`${item.id}/service-instruction`} />
+              <DocumentSection label="Service instruction" driveFolderId={item.driveFolderIdServiceInstruction} localFolderId={`${item.id}/service-instruction`} produit={item.label} categorie={category.label} />
             )}
             {item.driveFolderIdInstructionMontage && (
-              <DocumentSection label="Instruction de montage" driveFolderId={item.driveFolderIdInstructionMontage} localFolderId={`${item.id}/instruction-montage`} />
+              <DocumentSection label="Instruction de montage" driveFolderId={item.driveFolderIdInstructionMontage} localFolderId={`${item.id}/instruction-montage`} produit={item.label} categorie={category.label} />
             )}
           </>
         )}
@@ -893,7 +904,7 @@ function CustomSelect({ value, onChange, options, placeholder }) {
   );
 }
 
-function FormationDocumentList({ driveFolderId }) {
+function FormationDocumentList({ driveFolderId, categorie }) {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -924,12 +935,12 @@ function FormationDocumentList({ driveFolderId }) {
           {docItem.name}
         </button>
       ))}
-      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} categorie={categorie} />}
     </div>
   );
 }
 
-function GarantieCgvButton() {
+function GarantieCgvButton({ categorie }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [viewingDoc, setViewingDoc] = useState(null);
@@ -959,12 +970,12 @@ function GarantieCgvButton() {
         {loading ? "Chargement…" : "Conditions générales de vente et de garantie"}
       </button>
       {error && <p style={{ fontSize: "13px", color: "#C0392B", marginTop: "8px" }}>{error}</p>}
-      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} categorie={categorie} produit="Conditions générales de vente et de garantie" />}
     </>
   );
 }
 
-function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = null, forceDownload = false }) {
+function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = null, forceDownload = false, produit, categorie }) {
   const localDocuments = useMemo(() => getLocalDocuments(localFolderId), [localFolderId]);
   const [driveDocuments, setDriveDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -1018,7 +1029,7 @@ function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = 
           </button>
         </div>
       )}
-      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+      {viewingDoc && <PdfViewer doc={viewingDoc} onClose={() => setViewingDoc(null)} produit={produit} categorie={categorie} />}
     </div>
   );
 }
@@ -1037,6 +1048,24 @@ function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Te
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  // Suggère Nom / Prénom / E-mail à partir du compte connecté : l'adresse
+  // e-mail professionnelle suit le format prenom.nom@domaine, on en déduit
+  // le nom et le prénom sans écraser une valeur déjà saisie par l'utilisateur.
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    const email = currentUser?.email || "";
+    const localPart = email.split("@")[0] || "";
+    const [prenomPart, ...resteParts] = localPart.split(/[._-]+/).filter(Boolean);
+    const nomPart = resteParts.join(" ");
+    const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : "";
+    setForm((f) => ({
+      ...f,
+      prenom: f.prenom || capitalize(prenomPart),
+      nom: f.nom || capitalize(nomPart),
+      email: f.email || email,
+    }));
+  }, []);
 
   useEffect(() => {
     if (typeProbleme !== "codes_defaut" || !hasCodesDefaut) return;
@@ -1279,11 +1308,13 @@ function FieldWithTooltip({ tooltip, tooltipImage, ...inputProps }) {
 const formInputStyle = { width: "100%", padding: "12px 14px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, fontSize: "14px", outline: "none", boxSizing: "border-box" };
 const primaryBtnStyle = { background: COLORS.gold, color: COLORS.navy, border: "none", borderRadius: "10px", padding: "14px 20px", fontSize: "13px", fontWeight: 700, cursor: "pointer" };
 
-function logDocumentConsultation(doc) {
+function logDocumentConsultation(doc, produit, categorie) {
   try {
     addDoc(collection(db, "documentConsultations"), {
       fileName: doc?.name || "Document inconnu",
       viewedBy: auth.currentUser?.email || null,
+      produit: produit || null,
+      categorie: categorie || null,
       viewedAt: serverTimestamp(),
     }).catch(() => {});
     fetch(APPS_SCRIPT_URL, {
@@ -1292,6 +1323,8 @@ function logDocumentConsultation(doc) {
         type: "consultation_document",
         fileName: doc?.name || "Document inconnu",
         utilisateur: auth.currentUser?.email || "",
+        produit: produit || "",
+        categorie: categorie || "",
       }),
     }).catch(() => {});
   } catch {
@@ -1299,18 +1332,22 @@ function logDocumentConsultation(doc) {
   }
 }
 
-function PdfViewer({ doc, onClose }) {
+function PdfViewer({ doc, onClose, produit, categorie }) {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [showOutline, setShowOutline] = useState(true);
   const [hasOutline, setHasOutline] = useState(true);
   const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 2.5;
+  const ZOOM_STEP = 0.25;
   const consultationLoggedRef = useRef(false);
   useEffect(() => { const block = (e) => e.preventDefault(); document.addEventListener("contextmenu", block); return () => document.removeEventListener("contextmenu", block); }, []);
   useEffect(() => {
     if (consultationLoggedRef.current) return;
     consultationLoggedRef.current = true;
-    logDocumentConsultation(doc);
+    logDocumentConsultation(doc, produit, categorie);
   }, []);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.85)", display: "flex", flexDirection: "column", zIndex: 1000 }}>
@@ -1325,6 +1362,11 @@ function PdfViewer({ doc, onClose }) {
               <button onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages} style={navBtnStyle}><ChevronRight size={16} /></button>
             </div>
           )}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button onClick={() => setZoom((z) => Math.max(ZOOM_MIN, +(z - ZOOM_STEP).toFixed(2)))} disabled={zoom <= ZOOM_MIN} style={navBtnStyle} title="Dézoomer"><ZoomOut size={16} /></button>
+            <span style={{ fontSize: "13px", minWidth: "40px", textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((z) => Math.min(ZOOM_MAX, +(z + ZOOM_STEP).toFixed(2)))} disabled={zoom >= ZOOM_MAX} style={navBtnStyle} title="Zoomer"><ZoomIn size={16} /></button>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <button onClick={() => setRotation((r) => (r - 90 + 360) % 360)} style={navBtnStyle} title="Pivoter à gauche"><RotateCcw size={16} /></button>
             <button onClick={() => setRotation((r) => (r + 90) % 360)} style={navBtnStyle} title="Pivoter à droite"><RotateCw size={16} /></button>
@@ -1343,7 +1385,7 @@ function PdfViewer({ doc, onClose }) {
               </div>
             )}
             <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", padding: "24px", background: "#5A5A5A" }}>
-              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48))} />
+              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48)) * zoom} />
             </div>
           </div>
         </Document>
@@ -1685,6 +1727,144 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Retrouve le nœud produit (ou sous-produit) correspondant à un id, dans une catégorie donnée.
+function findProductNode(categories, categoryId, productId) {
+  const category = categories.find((c) => c.id === categoryId);
+  if (!category) return null;
+  for (const item of category.items || []) {
+    if (item.id === productId) return item;
+    if (item.items) {
+      const sub = item.items.find((s) => s.id === productId);
+      if (sub) return sub;
+    }
+  }
+  return null;
+}
+
+const adminLabelStyle = { fontSize: "12px", fontWeight: 700, color: COLORS.textMuted, marginBottom: "4px", display: "block", textTransform: "uppercase", letterSpacing: "0.02em" };
+
+// Fenêtre d'administration : envoie un PDF directement dans le dossier Drive
+// du produit et du type de document choisis (mêmes IDs que ceux définis dans CATEGORIES).
+function AdminUploadModal({ categories, onClose }) {
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState("");
+  const [selectedFolderType, setSelectedFolderType] = useState("");
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const category = categories.find((c) => c.id === selectedCategory) || null;
+  const productNode = category ? findProductNode(categories, selectedCategory, selectedProduct) : null;
+  const availableFolderTypes = productNode
+    ? Object.entries(DRIVE_FOLDER_LABELS).filter(([key]) => productNode[key])
+    : [];
+
+  const handleCategoryChange = (id) => {
+    setSelectedCategory(id);
+    setSelectedProduct("");
+    setSelectedFolderType("");
+    setMessage(null);
+  };
+
+  const handleProductChange = (id) => {
+    setSelectedProduct(id);
+    setSelectedFolderType("");
+    setMessage(null);
+  };
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    if (!file || !productNode || !selectedFolderType) return;
+    const folderId = productNode[selectedFolderType];
+    if (!folderId) {
+      setMessage({ type: "error", text: "Aucun dossier Drive associé à ce type de document pour ce produit." });
+      return;
+    }
+    setUploading(true);
+    setMessage(null);
+    try {
+      await uploadFileToDrive(file, folderId);
+      setMessage({ type: "success", text: "Fichier envoyé avec succès sur Google Drive." });
+      setFile(null);
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "Échec de l'envoi." });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: "20px" }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "460px", width: "100%", maxHeight: "85vh", overflow: "auto", padding: "28px", position: "relative" }}>
+        <button onClick={onClose} aria-label="Fermer" style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={20} /></button>
+        <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <Upload size={20} color={COLORS.gold} />Ajouter un document
+        </h2>
+        <p style={{ fontSize: "13px", color: COLORS.textMuted, marginBottom: "18px" }}>
+          Envoyez un PDF directement dans le dossier Drive du produit concerné.
+        </p>
+
+        <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div>
+            <label style={adminLabelStyle}>Catégorie</label>
+            <select value={selectedCategory} onChange={(e) => handleCategoryChange(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
+              <option value="">-- Choisir --</option>
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label style={adminLabelStyle}>Produit</label>
+            <select value={selectedProduct} onChange={(e) => handleProductChange(e.target.value)} disabled={!category} style={{ ...selectStyle, width: "100%" }}>
+              <option value="">-- Choisir --</option>
+              {category?.items?.map((p) =>
+                p.items ? (
+                  <optgroup label={p.label} key={p.id}>
+                    {p.items.map((sub) => <option key={sub.id} value={sub.id}>{sub.label}</option>)}
+                  </optgroup>
+                ) : (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                )
+              )}
+            </select>
+          </div>
+
+          <div>
+            <label style={adminLabelStyle}>Type de document</label>
+            <select value={selectedFolderType} onChange={(e) => setSelectedFolderType(e.target.value)} disabled={!productNode} style={{ ...selectStyle, width: "100%" }}>
+              <option value="">-- Choisir --</option>
+              {availableFolderTypes.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select>
+            {productNode && availableFolderTypes.length === 0 && (
+              <p style={{ fontSize: "12px", color: COLORS.textMuted, marginTop: "4px" }}>Aucun dossier Drive configuré pour ce produit.</p>
+            )}
+          </div>
+
+          <div>
+            <label style={adminLabelStyle}>Fichier PDF</label>
+            <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files[0] || null)} style={{ width: "100%" }} />
+          </div>
+
+          {message && (
+            <p style={{ fontSize: "13px", color: message.type === "error" ? "#C0392B" : "#1E7A34", margin: 0 }}>{message.text}</p>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "4px" }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>Fermer</button>
+            <button
+              type="submit"
+              disabled={uploading || !file || !selectedFolderType}
+              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: COLORS.gold, color: COLORS.navy, cursor: uploading ? "not-allowed" : "pointer", fontSize: "13px", fontWeight: 700, opacity: uploading || !file || !selectedFolderType ? 0.6 : 1 }}
+            >
+              {uploading ? "Envoi…" : "Uploader"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
