@@ -12,7 +12,7 @@ import {
 } from "firebase/auth";
 import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion, onSnapshot, serverTimestamp, addDoc, collection } from "firebase/firestore";
 
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxco9s-xafcaLN9vZaxkd4fyZRvIhQNOSVtrRUA-IitcB3hFF4089vcr4BYUMwDy8zb-g/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzwmR3yGrQhi4BZXjprrkCeD0gSeBZqs3EKjN_9FBIs1y2_Zb3LsBcNzsQSvzGUT-80bw/exec";
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 Mo
 
@@ -399,6 +399,23 @@ const CATEGORIES = [
   },
 ];
 
+// Détecte les écrans étroits (mobile/Android) et se met à jour au redimensionnement/rotation.
+function useIsMobile(breakpoint = 640) {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth <= breakpoint
+  );
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener ? mql.addEventListener("change", handler) : mql.addListener(handler);
+    return () => {
+      mql.removeEventListener ? mql.removeEventListener("change", handler) : mql.removeListener(handler);
+    };
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(false);
@@ -549,6 +566,7 @@ export default function App() {
   const push = (entry) => setStack((s) => [...s, entry]);
   const pop = () => setStack((s) => s.slice(0, -1));
   const goHome = () => setStack([]);
+  const isMobile = useIsMobile();
 
   const current = stack[stack.length - 1];
   const activeCategory = stack.find((s) => s.type === "category")?.data;
@@ -560,10 +578,9 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.navy, fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
-      <div style={{ background: "#FFC800", padding: "6px 24px 6px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "20px", height: "72px", boxSizing: "border-box", position: "relative" }}>
-        <img src={logo} alt="Kaeser Compresseurs" style={{ height: "100%", width: "auto", display: "block", background: "transparent", flexShrink: 0 }} />
-        <h1 style={{ fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }}>Le Pôle Expert</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+      <div style={{ background: "#FFC800", padding: isMobile ? "10px 12px" : "6px 24px 6px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: isMobile ? "8px" : "20px", minHeight: "72px", flexWrap: isMobile ? "wrap" : "nowrap", boxSizing: "border-box", position: "relative" }}>
+        <img src={logo} alt="Kaeser Compresseurs" style={{ height: isMobile ? "36px" : "100%", width: "auto", display: "block", background: "transparent", flexShrink: 0, order: 1 }} />
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "6px" : "10px", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", order: 2 }}>
           <button onClick={() => setShowNotifModal(true)} aria-label="Notifications" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", width: "38px", height: "38px", background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", cursor: "pointer", color: COLORS.navy }}>
             <Bell size={18} />
             {pendingNotifications.length > 0 && (
@@ -581,18 +598,29 @@ export default function App() {
               <Upload size={18} />
             </button>
           )}
-          <button onClick={() => signOut(auth)} style={{ fontSize: "13px", color: COLORS.navy, background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", padding: "8px 14px", cursor: "pointer" }}>Se déconnecter ({user.email})</button>
+          <button onClick={() => signOut(auth)} style={{ fontSize: "13px", color: COLORS.navy, background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
+            {isMobile ? "Déconnexion" : `Se déconnecter (${user.email})`}
+          </button>
         </div>
+        <h1
+          style={
+            isMobile
+              ? { fontSize: "17px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", whiteSpace: "nowrap", order: 3, flexBasis: "100%" }
+              : { fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }
+          }
+        >
+          Le Pôle Expert
+        </h1>
       </div>
-      <section style={{ background: COLORS.bannerGray, color: "#FFFFFF", padding: "0 24px 0 24px", display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+      <section style={{ background: COLORS.bannerGray, color: "#FFFFFF", padding: isMobile ? "0 12px" : "0 24px 0 24px", display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
         <p style={{ fontStyle: "italic", fontSize: "14px", opacity: 0.9, margin: "10px 0 0", textAlign: "center" }}>Qualité, Performance et Satisfaction Client</p>
-        <img src={imagePoleExpert} alt="Illustration Pôle Expert" style={{ display: "block", margin: "6px auto 0", height: "250px", width: "auto" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", fontSize: "13.5px", opacity: 0.85, visibility: stack.length > 0 ? "visible" : "hidden" }}>
+        <img src={imagePoleExpert} alt="Illustration Pôle Expert" style={{ display: "block", margin: "6px auto 0", height: isMobile ? "140px" : "250px", width: "auto", maxWidth: "100%" }} />
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px 10px", marginTop: "14px", fontSize: "13.5px", opacity: 0.85, visibility: stack.length > 0 ? "visible" : "hidden" }}>
           <span style={{ cursor: "pointer" }} onClick={goHome}>Accueil</span>
           {stack.map((s, i) => {
             const isLast = i === stack.length - 1;
             return (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <span key={i} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "8px 10px" }}>
                 <span style={{ opacity: 0.6 }}>/</span>
                 <span style={{ cursor: isLast ? "default" : "pointer", opacity: 1, background: isLast ? COLORS.gold : "transparent", color: isLast ? COLORS.navy : "inherit", borderRadius: isLast ? "8px" : 0, padding: isLast ? "2px 10px" : 0 }} onClick={() => { if (!isLast) { setStack((prev) => prev.slice(0, i + 1)); } }}>{s.data.label}</span>
               </span>
@@ -600,7 +628,7 @@ export default function App() {
           })}
         </div>
       </section>
-      <main style={{ flex: 1, padding: "12px 24px 40px" }}>
+      <main style={{ flex: 1, padding: isMobile ? "12px 12px 32px" : "12px 24px 40px" }}>
         {!current && <MainMenu onSelect={(cat) => push(cat.items ? { type: "category", data: cat } : { type: "item", data: cat })} />}
         {(current?.type === "category" || current?.type === "subcategory") && <SubMenu category={current.data} onSelect={(item) => push(item.items ? { type: "subcategory", data: item } : { type: "item", data: item })} />}
         {current?.type === "item" && <DetailPage category={stack[stack.length - 2]?.data} item={current.data} />}
@@ -643,6 +671,7 @@ function SubMenu({ category, onSelect }) {
   const [query, setQuery] = useState("");
   const [showExpertForm, setShowExpertForm] = useState(false);
   const [showMachineForm, setShowMachineForm] = useState(false);
+  const isMobile = useIsMobile();
   const filteredItems = category.items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()));
   const showSideIcon = category.id === "garantie" || category.id === "pieces-detachees" || category.id === "formation";
 
@@ -703,8 +732,8 @@ function SubMenu({ category, onSelect }) {
   return (
     <div>
       {showSideIcon ? (
-        <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div style={{ flex: "0 0 200px", textAlign: "center" }}>
+        <div style={{ display: "flex", gap: isMobile ? "20px" : "60px", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", alignItems: isMobile ? "center" : "flex-start" }}>
+          <div style={{ flex: isMobile ? "0 0 auto" : "0 0 200px", textAlign: "center" }}>
             {category.image ? (
               <img src={category.image} alt="" style={{ width: 160, height: 160, objectFit: "contain", display: "block", margin: "0 auto" }} />
             ) : (
@@ -713,7 +742,7 @@ function SubMenu({ category, onSelect }) {
               </div>
             )}
           </div>
-          <div style={{ flex: 1, minWidth: "280px" }}>{content}</div>
+          <div style={{ flex: 1, minWidth: 0, width: "100%" }}>{content}</div>
         </div>
       ) : (
         content
@@ -745,10 +774,11 @@ function SimulateurButton({ item, onOpen }) {
 function DetailPage({ category, item }) {
   const [showExpertForm, setShowExpertForm] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
+  const isMobile = useIsMobile();
   const simulateurInNoticeRow = Boolean(item.simulateurUrl && item.driveFolderId);
   return (
-    <div style={{ display: "flex", gap: "60px", flexWrap: "wrap", alignItems: "flex-start", maxWidth: "1200px" }}>
-      <div style={{ flex: "0 0 300px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <div style={{ display: "flex", gap: isMobile ? "20px" : "60px", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", alignItems: isMobile ? "center" : "flex-start", maxWidth: "1200px" }}>
+      <div style={{ flex: isMobile ? "0 0 auto" : "0 0 300px", display: "flex", flexDirection: "column", alignItems: "center" }}>
         {item.image ? (
           <img src={item.image} alt="" style={{ width: 200, height: 200, objectFit: "contain", marginBottom: "10px" }} />
         ) : (
@@ -762,7 +792,7 @@ function DetailPage({ category, item }) {
           </div>
         )}
       </div>
-      <div style={{ flex: 1, minWidth: "320px", maxWidth: "600px" }}>
+      <div style={{ flex: 1, minWidth: 0, width: "100%", maxWidth: isMobile ? "100%" : "600px" }}>
         {item.id === "huile" ? (
           item.driveFolderIdInstructionTechnique && (
             <DocumentSection label="Fiche de sécurité" driveFolderId={item.driveFolderIdInstructionTechnique} localFolderId={`${item.id}/instruction-technique`} produit={item.label} categorie={category.label} />
@@ -1016,7 +1046,7 @@ function DocumentSection({ label, driveFolderId, localFolderId, fileExtension = 
       {error && <p style={{ fontSize: "13px", color: "#C0392B" }}>{error}</p>}
       {!loading && !error && documents.length === 0 && <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic" }}>Aucun document disponible.</p>}
       {!loading && !error && documents.length > 0 && (
-        <div style={{ display: "flex", gap: "8px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
           <CustomSelect
             value={selectedDocId}
             onChange={setSelectedDocId}
@@ -1333,9 +1363,10 @@ function logDocumentConsultation(doc, produit, categorie) {
 }
 
 function PdfViewer({ doc, onClose, produit, categorie }) {
+  const isMobile = useIsMobile();
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
-  const [showOutline, setShowOutline] = useState(true);
+  const [showOutline, setShowOutline] = useState(() => typeof window !== "undefined" && window.innerWidth > 640);
   const [hasOutline, setHasOutline] = useState(true);
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(1);
@@ -1351,14 +1382,14 @@ function PdfViewer({ doc, onClose, produit, categorie }) {
   }, []);
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.85)", display: "flex", flexDirection: "column", zIndex: 1000 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: COLORS.navy, color: "#FFFFFF" }}>
-        <span style={{ fontSize: "14px", fontWeight: 600 }}>{doc.name}</span>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px", padding: isMobile ? "10px 12px" : "14px 20px", background: COLORS.navy, color: "#FFFFFF" }}>
+        <span style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: isMobile ? "100%" : "40%" }}>{doc.name}</span>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: isMobile ? "8px" : "14px" }}>
           <button onClick={() => setShowOutline((s) => !s)} style={{ ...navBtnStyle, background: showOutline ? COLORS.gold : "rgba(255,255,255,0.15)" }} title="Signets"><PanelLeft size={16} color={showOutline ? COLORS.navy : "#FFFFFF"} /></button>
           {numPages && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
               <button onClick={() => setPageNumber((p) => Math.max(1, p - 1))} disabled={pageNumber <= 1} style={navBtnStyle}><ChevronLeft size={16} /></button>
-              <span>Page {pageNumber} / {numPages}</span>
+              <span>{isMobile ? `${pageNumber}/${numPages}` : `Page ${pageNumber} / ${numPages}`}</span>
               <button onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))} disabled={pageNumber >= numPages} style={navBtnStyle}><ChevronRight size={16} /></button>
             </div>
           )}
@@ -1371,21 +1402,30 @@ function PdfViewer({ doc, onClose, produit, categorie }) {
             <button onClick={() => setRotation((r) => (r - 90 + 360) % 360)} style={navBtnStyle} title="Pivoter à gauche"><RotateCcw size={16} /></button>
             <button onClick={() => setRotation((r) => (r + 90) % 360)} style={navBtnStyle} title="Pivoter à droite"><RotateCw size={16} /></button>
           </div>
-          <button onClick={onClose} style={closeBtnStyle}><X size={16} />Fermer</button>
+          <button onClick={onClose} style={closeBtnStyle}><X size={16} />{!isMobile && "Fermer"}</button>
         </div>
       </div>
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>
         <Document file={doc.url} onLoadSuccess={(pdf) => setNumPages(pdf.numPages)} loading={<p style={{ color: "#FFFFFF", padding: "24px" }}>Chargement du document…</p>} error={<p style={{ color: "#FFFFFF", padding: "24px" }}>Impossible d'afficher ce PDF.</p>}>
-          <div style={{ display: "flex", flex: 1, height: "100%" }}>
+          <div style={{ display: "flex", flex: 1, height: "100%", position: "relative" }}>
             {showOutline && (
-              <div style={{ width: "260px", flexShrink: 0, overflow: "auto", background: "#FFFFFF", borderRight: `1px solid ${COLORS.cardBorder}`, padding: "16px" }}>
-                <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>Signets</h4>
-                <div style={{ fontSize: "12px", lineHeight: 1.5 }}><Outline onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))} onItemClick={({ pageNumber: pn }) => setPageNumber(pn)} /></div>
+              <div
+                style={
+                  isMobile
+                    ? { position: "absolute", inset: 0, zIndex: 5, width: "85vw", maxWidth: "300px", overflow: "auto", background: "#FFFFFF", borderRight: `1px solid ${COLORS.cardBorder}`, padding: "16px", boxShadow: "4px 0 16px rgba(0,0,0,0.25)" }
+                    : { width: "260px", flexShrink: 0, overflow: "auto", background: "#FFFFFF", borderRight: `1px solid ${COLORS.cardBorder}`, padding: "16px" }
+                }
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                  <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, margin: 0 }}>Signets</h4>
+                  {isMobile && <button onClick={() => setShowOutline(false)} aria-label="Fermer les signets" style={{ background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={16} /></button>}
+                </div>
+                <div style={{ fontSize: "12px", lineHeight: 1.5 }}><Outline onLoadSuccess={(outline) => setHasOutline(Boolean(outline && outline.length))} onItemClick={({ pageNumber: pn }) => { setPageNumber(pn); if (isMobile) setShowOutline(false); }} /></div>
                 {!hasOutline && <p style={{ fontSize: "12px", color: COLORS.textMuted }}>Ce PDF ne contient pas de signets.</p>}
               </div>
             )}
-            <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", padding: "24px", background: "#5A5A5A" }}>
-              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(1400, window.innerWidth - (showOutline ? 300 : 48)) * zoom} />
+            <div onContextMenu={(e) => e.preventDefault()} style={{ flex: 1, overflow: "auto", display: "flex", justifyContent: "center", padding: isMobile ? "12px" : "24px", background: "#5A5A5A" }}>
+              <Page pageNumber={pageNumber} rotate={rotation} renderAnnotationLayer={false} renderTextLayer={false} width={Math.min(1400, window.innerWidth - (!isMobile && showOutline ? 300 : 24)) * zoom} />
             </div>
           </div>
         </Document>
@@ -1906,9 +1946,9 @@ function LoginScreen({ kickedOut }) {
 
 const alertStyle = { background: "#FBE9E7", color: "#C0392B", fontSize: "13px", padding: "10px 16px", borderRadius: "8px", maxWidth: "320px", textAlign: "center" };
 const inputStyle = { padding: "12px 14px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, fontSize: "14px", outline: "none" };
-const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 240px))", gap: "18px", maxWidth: "1560px", margin: "0 auto", justifyContent: "center" };
-const searchWrapStyle = { display: "flex", alignItems: "center", gap: "10px", maxWidth: "480px", marginLeft: "auto", marginRight: "auto", marginBottom: "28px", padding: "12px 16px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF" };
-const searchInputStyle = { flex: 1, border: "none", outline: "none", fontSize: "14px", color: COLORS.navy, background: "transparent" };
-const selectStyle = { width: "320px", flexShrink: 0, padding: "0 14px", height: "42px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", color: COLORS.navy, fontSize: "13px" };
+const gridStyle = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 240px))", gap: "18px", maxWidth: "1560px", margin: "0 auto", justifyContent: "center" };
+const searchWrapStyle = { display: "flex", alignItems: "center", gap: "10px", maxWidth: "480px", marginLeft: "auto", marginRight: "auto", marginBottom: "28px", padding: "12px 16px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", boxSizing: "border-box" };
+const searchInputStyle = { flex: 1, minWidth: 0, border: "none", outline: "none", fontSize: "14px", color: COLORS.navy, background: "transparent" };
+const selectStyle = { width: "100%", maxWidth: "320px", minWidth: 0, flexShrink: 1, padding: "0 14px", height: "42px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", color: COLORS.navy, fontSize: "13px", boxSizing: "border-box" };
 const navBtnStyle = { display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.15)", border: "none", color: "#FFFFFF", cursor: "pointer", padding: "6px", borderRadius: "6px" };
 const closeBtnStyle = { display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.15)", border: "none", color: "#FFFFFF", fontSize: "13px", cursor: "pointer", padding: "6px 12px", borderRadius: "8px" };
