@@ -129,6 +129,27 @@ async function getDriveDocuments(folderId) {
   return getDriveFiles(folderId, null);
 }
 
+// Le script d'upload renvoie un lien de visualisation Drive
+// (ex. https://drive.google.com/file/d/ID/view) : parfait pour un lien
+// cliquable, mais inutilisable comme src d'une balise <img> (Drive renvoie
+// une page HTML, pas les octets de l'image, donc rien ne s'affiche).
+// On le convertit à l'affichage en URL directement embarquable, sans
+// toucher aux données déjà enregistrées.
+function driveEmbeddableUrl(url) {
+  if (typeof url !== "string" || !url) return url;
+  const match = url.match(/\/file\/d\/([-\w]{20,})/) || url.match(/[?&]id=([-\w]{20,})/);
+  const id = match && match[1];
+  if (!id) return url; // pas un lien Drive reconnu, on le laisse tel quel
+  return `https://drive.google.com/thumbnail?id=${id}&sz=w1000`;
+}
+
+// Réécrit les src des <img> dans un fragment HTML enregistré (message ou
+// réponse) pour les rendre embarquables, sans modifier le HTML stocké.
+function makeImagesEmbeddable(html) {
+  if (!html) return html;
+  return html.replace(/<img([^>]*?)\ssrc="([^"]*)"/g, (full, attrs, src) => `<img${attrs} src="${driveEmbeddableUrl(src)}"`);
+}
+
 // Dossier Drive contenant le PDF "Conditions générales de vente et de garantie"
 const GARANTIE_CGV_FOLDER_ID = "1lJ1Lnpj1veKBcqLgbGTZYP8f7-6R_dx_";
 
@@ -1074,10 +1095,73 @@ function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Te
   const [loadingCodesDefaut, setLoadingCodesDefaut] = useState(false);
   const [errorCodesDefaut, setErrorCodesDefaut] = useState(null);
   const [file, setFile] = useState(null);
+  const messageEditorRef = useRef(null);
+  const imageFilesRef = useRef(new Map()); // id -> File, source de vérité pour les images insérées dans le message
+  const [imageCount, setImageCount] = useState(0); // uniquement pour l'affichage ("2 image(s) insérée(s)")
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
   const update = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+
+  // Le nombre d'images est toujours recalculé à partir du contenu réel de
+  // l'éditeur : si l'utilisateur supprime une image au clavier (sélection +
+  // Suppr), le compteur et la liste envoyée à la fin restent synchronisés.
+  const syncImageCount = () => {
+    setImageCount(messageEditorRef.current?.querySelectorAll("img[data-image-id]").length || 0);
+  };
+
+  const insertImageIntoEditor = (id, previewUrl) => {
+    const editor = messageEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const html = `<img src="${previewUrl}" data-image-id="${id}" alt="" style="max-width:140px;max-height:140px;border-radius:8px;vertical-align:middle;margin:3px;object-fit:cover;cursor:pointer;" title="Double-cliquez pour retirer l'image" />`;
+    document.execCommand("insertHTML", false, html);
+    syncImageCount();
+  };
+
+  const addImages = (fileList) => {
+    const newFiles = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
+    newFiles.forEach((f) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const previewUrl = URL.createObjectURL(f);
+      imageFilesRef.current.set(id, f);
+      insertImageIntoEditor(id, previewUrl);
+    });
+  };
+
+  // Double-clic sur une image insérée dans le message pour la retirer.
+  const handleEditorDoubleClick = (e) => {
+    if (e.target.tagName === "IMG") {
+      const id = e.target.getAttribute("data-image-id");
+      URL.revokeObjectURL(e.target.src);
+      e.target.remove();
+      if (id) imageFilesRef.current.delete(id);
+      syncImageCount();
+    }
+  };
+
+  // Permet de coller directement une capture d'écran (Ctrl+V) dans la zone de message.
+  // Tout collage non-image est forcé en texte brut : le contenu de l'éditeur est
+  // enregistré tel quel (HTML) pour préserver la position des images, il ne doit
+  // donc jamais contenir de balises arbitraires collées depuis une autre page.
+  const handleMessagePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) pastedFiles.push(f);
+      }
+    }
+    e.preventDefault();
+    if (pastedFiles.length) {
+      addImages(pastedFiles);
+    } else {
+      const text = e.clipboardData.getData("text/plain");
+      if (text) document.execCommand("insertText", false, text);
+    }
+  };
 
   // Suggère Nom / Prénom / E-mail à partir du compte connecté : l'adresse
   // e-mail professionnelle suit le format prenom.nom@domaine, on en déduit
@@ -1123,27 +1207,63 @@ function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Te
       const motifFinal = typeProbleme === "codes_defaut"
         ? codeDefautChoisi.replace(/\.pdf$/i, "")
         : motifAutres.trim();
-      const formAEnvoyer = { ...form, motif: motifFinal };
+      const messageTexte = (messageEditorRef.current?.innerText || "").trim();
+      const imageNodes = messageEditorRef.current
+        ? Array.from(messageEditorRef.current.querySelectorAll("img[data-image-id]"))
+        : [];
+      const formAEnvoyer = { ...form, message: messageTexte, motif: motifFinal };
       const destinataire = SERVICE_EMAILS[form.sujet] || null;
       let pieceJointeUrl = null;
       if (file) {
         pieceJointeUrl = await uploadFileToDrive(file);
       }
-      const docRef = await addDoc(collection(db, "expertRequests"), { ...formAEnvoyer, destinataire, pieceJointeNom: file?.name || null, pieceJointeUrl, produit: item?.label || category?.label || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp(), status: "En attente", archived: false });
+      let imageUploadFailed = false;
+      const imagesMessage = imageNodes.length
+        ? await Promise.all(imageNodes.map(async (node) => {
+            const id = node.getAttribute("data-image-id");
+            const imgFile = imageFilesRef.current.get(id);
+            if (!imgFile) { node.remove(); return null; }
+            const originalSrc = node.src;
+            try {
+              const url = await uploadFileToDrive(imgFile);
+              // Remplace l'aperçu local par l'URL Drive définitive, à la même position dans le message.
+              node.src = url;
+              node.removeAttribute("data-image-id");
+              node.removeAttribute("title");
+              URL.revokeObjectURL(originalSrc);
+              return { nom: imgFile.name, url };
+            } catch (err) {
+              // Une image en échec ne doit jamais rester avec son URL blob:
+              // locale (invalide hors de cette session) ni bloquer l'envoi
+              // des autres images ou du reste de la demande.
+              console.error("Erreur upload image message:", err);
+              imageUploadFailed = true;
+              node.remove();
+              URL.revokeObjectURL(originalSrc);
+              return null;
+            }
+          }))
+        : [];
+      const imagesMessageFiltrees = imagesMessage.filter(Boolean);
+      const messageHtml = messageEditorRef.current ? messageEditorRef.current.innerHTML : "";
+      const docRef = await addDoc(collection(db, "expertRequests"), { ...formAEnvoyer, messageHtml, destinataire, pieceJointeNom: file?.name || null, pieceJointeUrl, imagesMessage: imagesMessageFiltrees, produit: item?.label || category?.label || null, categorie: category?.label || null, requestedBy: auth.currentUser?.email || null, createdAt: serverTimestamp(), status: "En attente", archived: false });
       await fetch(APPS_SCRIPT_URL, {
         method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ type: "nouvelle_demande", requestId: docRef.id, ...formAEnvoyer, destinataire, produit: item?.label || category?.label || "", categorie: category?.label || "", pieceJointe: file?.name || "Aucune" }),
+        body: JSON.stringify({ type: "nouvelle_demande", requestId: docRef.id, ...formAEnvoyer, destinataire, produit: item?.label || category?.label || "", categorie: category?.label || "", pieceJointe: file?.name || "Aucune", imagesMessage: imagesMessageFiltrees.map((i) => i.nom).join(", ") || "Aucune" }),
       });
       setSent(true);
+      if (imageUploadFailed) {
+        setError("Votre demande a bien été envoyée, mais une ou plusieurs images n'ont pas pu être jointes.");
+      }
     } catch (err) {
-      setError(err?.message && file ? `Pièce jointe : ${err.message}` : "Impossible d'envoyer votre demande pour l'instant. Réessayez.");
+      setError(err?.message && (file || imageFilesRef.current.size > 0) ? `Pièce jointe : ${err.message}` : "Impossible d'envoyer votre demande pour l'instant. Réessayez.");
     } finally {
       setSubmitting(false);
     }
   };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(11,31,58,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "480px", width: "100%", maxHeight: "90vh", overflow: "auto", padding: "28px", position: "relative" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "680px", width: "100%", maxHeight: "90vh", overflow: "auto", padding: "28px", position: "relative" }}>
         <button onClick={onClose} aria-label="Fermer" style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={20} /></button>
         {sent ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
@@ -1208,13 +1328,39 @@ function ExpertRequestForm({ item, category, onClose, initialSujet = "Support Te
                   />
                 </div>
               )}
-              <textarea
-                placeholder="Votre message (informations complémentaires, optionnel)..."
-                value={form.message}
-                onChange={update("message")}
-                rows={4}
-                style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
-              />
+              <div>
+                <style>{`
+                  .expert-message-editor:empty:before {
+                    content: attr(data-placeholder);
+                    color: ${COLORS.textMuted};
+                    pointer-events: none;
+                  }
+                  .expert-message-editor img:hover {
+                    outline: 2px solid ${COLORS.gold};
+                  }
+                `}</style>
+                <div
+                  ref={messageEditorRef}
+                  className="expert-message-editor"
+                  contentEditable
+                  suppressContentEditableWarning
+                  onPaste={handleMessagePaste}
+                  onInput={syncImageCount}
+                  onDoubleClick={handleEditorDoubleClick}
+                  data-placeholder="Votre message (informations complémentaires, optionnel)..."
+                  style={{ ...formInputStyle, minHeight: "180px", maxHeight: "420px", overflowY: "auto", fontFamily: "inherit", lineHeight: 1.5, cursor: "text" }}
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "6px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "11.5px", color: COLORS.textMuted, fontStyle: "italic" }}>
+                    Collez une capture d'écran (Ctrl+V) directement dans le message ci-dessus
+                  </span>
+                </div>
+                {imageCount > 0 && (
+                  <p style={{ fontSize: "11.5px", color: COLORS.textMuted, marginTop: "4px" }}>
+                    {imageCount} image{imageCount > 1 ? "s" : ""} insérée{imageCount > 1 ? "s" : ""} — double-cliquez sur une image pour la retirer.
+                  </p>
+                )}
+              </div>
               <div>
                 <label style={{ fontSize: "12px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}><Paperclip size={14} />Pièce jointe (optionnel)</label>
                 <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ fontSize: "13px" }} />
@@ -1552,9 +1698,84 @@ function formatRequestDate(ts) {
 
 function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
   const isProcessed = !!request.archived;
-  const [reponse, setReponse] = useState("");
   const [reponseFile, setReponseFile] = useState(null);
-  const canSend = reponse.trim().length > 0;
+  const reponseEditorRef = useRef(null);
+  const reponseImageFilesRef = useRef(new Map()); // id -> File, images insérées dans la réponse
+  const [reponseImageCount, setReponseImageCount] = useState(0);
+  const [reponseHasText, setReponseHasText] = useState(false);
+  const canSend = reponseHasText || reponseImageCount > 0;
+
+  const syncReponseState = () => {
+    const editor = reponseEditorRef.current;
+    if (!editor) return;
+    setReponseImageCount(editor.querySelectorAll("img[data-image-id]").length);
+    setReponseHasText(editor.innerText.trim().length > 0);
+  };
+
+  const insertReponseImage = (id, previewUrl) => {
+    const editor = reponseEditorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const html = `<img src="${previewUrl}" data-image-id="${id}" alt="" style="max-width:140px;max-height:140px;border-radius:8px;vertical-align:middle;margin:3px;object-fit:cover;cursor:pointer;" title="Double-cliquez pour retirer l'image" />`;
+    document.execCommand("insertHTML", false, html);
+    syncReponseState();
+  };
+
+  const addReponseImages = (fileList) => {
+    const newFiles = Array.from(fileList || []).filter((f) => f.type.startsWith("image/"));
+    newFiles.forEach((f) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const previewUrl = URL.createObjectURL(f);
+      reponseImageFilesRef.current.set(id, f);
+      insertReponseImage(id, previewUrl);
+    });
+  };
+
+  // Double-clic sur une image insérée dans la réponse pour la retirer.
+  const handleReponseEditorDoubleClick = (e) => {
+    if (e.target.tagName === "IMG") {
+      const id = e.target.getAttribute("data-image-id");
+      URL.revokeObjectURL(e.target.src);
+      e.target.remove();
+      if (id) reponseImageFilesRef.current.delete(id);
+      syncReponseState();
+    }
+  };
+
+  // Permet de coller directement une capture d'écran (Ctrl+V) dans la réponse.
+  // Tout collage non-image est forcé en texte brut (le HTML de la réponse est
+  // enregistré tel quel pour préserver la position des images).
+  const handleReponsePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const pastedFiles = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) pastedFiles.push(f);
+      }
+    }
+    e.preventDefault();
+    if (pastedFiles.length) {
+      addReponseImages(pastedFiles);
+    } else {
+      const text = e.clipboardData.getData("text/plain");
+      if (text) document.execCommand("insertText", false, text);
+    }
+  };
+
+  const handleSend = () => {
+    const texte = (reponseEditorRef.current?.innerText || "").trim();
+    const html = reponseEditorRef.current ? reponseEditorRef.current.innerHTML : "";
+    const imageNodes = reponseEditorRef.current
+      ? Array.from(reponseEditorRef.current.querySelectorAll("img[data-image-id]"))
+      : [];
+    const images = imageNodes
+      .map((node) => ({ id: node.getAttribute("data-image-id"), file: reponseImageFilesRef.current.get(node.getAttribute("data-image-id")) }))
+      .filter((img) => img.file);
+    onArchive(request, texte, reponseFile, images, html);
+  };
+
   return (
     <div style={{ padding: "14px 16px", borderRadius: "10px", border: `1px solid ${COLORS.cardBorder}`, background: isProcessed ? "#FAFAF8" : "#FFFFFF" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
@@ -1578,23 +1799,49 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
         {request.machine && <span><strong>Machine :</strong> {request.machine}{request.numeroSerie ? ` — N° série ${request.numeroSerie}` : ""}</span>}
         {request.categorie && <span><strong>Catégorie :</strong> {request.categorie}</span>}
         {request.motif && <span><strong>Motif :</strong> {request.motif}</span>}
-        {request.message && <span style={{ color: COLORS.textMuted, marginTop: "4px" }}>{request.message}</span>}
+        {request.messageHtml ? (
+          <div style={{ color: COLORS.textMuted, marginTop: "4px", lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: makeImagesEmbeddable(request.messageHtml) }} />
+        ) : (
+          request.message && <span style={{ color: COLORS.textMuted, marginTop: "4px" }}>{request.message}</span>
+        )}
       </div>
       {request.pieceJointeUrl && (
         <a href={request.pieceJointeUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "10px", fontSize: "12.5px", fontWeight: 700, color: COLORS.goldDark, textDecoration: "none" }}>
           <Paperclip size={13} />{request.pieceJointeNom || "Pièce jointe"}<Download size={13} />
         </a>
       )}
+      {!request.messageHtml && Array.isArray(request.imagesMessage) && request.imagesMessage.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" }}>
+          {request.imagesMessage.map((img, i) => (
+            <a key={img.url || i} href={img.url} target="_blank" rel="noreferrer" title={img.nom || "Image"}>
+              <img src={driveEmbeddableUrl(img.url)} alt={img.nom || "Image jointe"} style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}` }} />
+            </a>
+          ))}
+        </div>
+      )}
       {isProcessed && (
         <>
-          {request.reponse && (
+          {(request.reponseHtml || request.reponse) && (
             <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "8px", background: "#FFFFFF", border: `1px solid ${COLORS.cardBorder}` }}>
               <span style={{ fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", color: COLORS.textMuted }}>Réponse envoyée</span>
-              <p style={{ fontSize: "13px", color: COLORS.navy, marginTop: "4px", whiteSpace: "pre-wrap" }}>{request.reponse}</p>
+              {request.reponseHtml ? (
+                <div style={{ fontSize: "13px", color: COLORS.navy, marginTop: "4px", lineHeight: 1.5 }} dangerouslySetInnerHTML={{ __html: makeImagesEmbeddable(request.reponseHtml) }} />
+              ) : (
+                <p style={{ fontSize: "13px", color: COLORS.navy, marginTop: "4px", whiteSpace: "pre-wrap" }}>{request.reponse}</p>
+              )}
               {request.reponsePieceJointeUrl && (
                 <a href={request.reponsePieceJointeUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "12.5px", fontWeight: 700, color: COLORS.goldDark, textDecoration: "none" }}>
                   <Paperclip size={13} />{request.reponsePieceJointeNom || "Pièce jointe"}<Download size={13} />
                 </a>
+              )}
+              {!request.reponseHtml && Array.isArray(request.reponseImages) && request.reponseImages.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "8px" }}>
+                  {request.reponseImages.map((img, i) => (
+                    <a key={img.url || i} href={img.url} target="_blank" rel="noreferrer" title={img.nom || "Image"}>
+                      <img src={driveEmbeddableUrl(img.url)} alt={img.nom || "Image jointe"} style={{ width: "64px", height: "64px", objectFit: "cover", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}` }} />
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -1610,13 +1857,37 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
           <label style={{ fontSize: "11.5px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.03em", color: COLORS.textMuted }}>
             Réponse au demandeur
           </label>
-          <textarea
-            value={reponse}
-            onChange={(e) => setReponse(e.target.value)}
-            placeholder="Écrivez votre réponse, elle sera envoyée par e-mail au demandeur…"
-            rows={3}
-            style={{ ...formInputStyle, resize: "vertical", fontFamily: "inherit" }}
-          />
+          <div>
+            <style>{`
+              .reponse-message-editor:empty:before {
+                content: attr(data-placeholder);
+                color: ${COLORS.textMuted};
+                pointer-events: none;
+              }
+              .reponse-message-editor img:hover {
+                outline: 2px solid ${COLORS.gold};
+              }
+            `}</style>
+            <div
+              ref={reponseEditorRef}
+              className="reponse-message-editor"
+              contentEditable
+              suppressContentEditableWarning
+              onPaste={handleReponsePaste}
+              onInput={syncReponseState}
+              onDoubleClick={handleReponseEditorDoubleClick}
+              data-placeholder="Écrivez votre réponse, elle sera envoyée par e-mail au demandeur…"
+              style={{ ...formInputStyle, minHeight: "80px", maxHeight: "300px", overflowY: "auto", fontFamily: "inherit", lineHeight: 1.5, cursor: "text" }}
+            />
+            <span style={{ fontSize: "11.5px", color: COLORS.textMuted, fontStyle: "italic", display: "block", marginTop: "4px" }}>
+              Collez une capture d'écran (Ctrl+V) directement dans la réponse ci-dessus
+            </span>
+            {reponseImageCount > 0 && (
+              <p style={{ fontSize: "11.5px", color: COLORS.textMuted, marginTop: "4px" }}>
+                {reponseImageCount} image{reponseImageCount > 1 ? "s" : ""} insérée{reponseImageCount > 1 ? "s" : ""} — double-cliquez sur une image pour la retirer.
+              </p>
+            )}
+          </div>
           <div>
             <label style={{ fontSize: "11.5px", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
               <Paperclip size={13} />Pièce jointe (optionnel)
@@ -1624,7 +1895,7 @@ function ExpertRequestCard({ request, isAdmin, onArchive, archiving }) {
             <input type="file" onChange={(e) => setReponseFile(e.target.files?.[0] || null)} style={{ fontSize: "13px" }} />
           </div>
           <button
-            onClick={() => onArchive(request, reponse.trim(), reponseFile)}
+            onClick={handleSend}
             disabled={archiving || !canSend}
             title={!canSend ? "Écrivez une réponse avant de traiter la demande" : undefined}
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: COLORS.navy, color: "#FFFFFF", border: "none", borderRadius: "8px", padding: "10px 14px", fontSize: "12.5px", fontWeight: 700, cursor: canSend ? "pointer" : "not-allowed", opacity: archiving || !canSend ? 0.6 : 1 }}
@@ -1664,7 +1935,7 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
     }
   };
 
-  const handleArchive = async (request, reponse, file) => {
+  const handleArchive = async (request, reponse, file, images = [], html = "") => {
     setError(null);
     setArchivingId(request.id);
     try {
@@ -1672,16 +1943,52 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
       if (file) {
         try {
           reponsePieceJointeUrl = await uploadFileToDrive(file);
-        } catch {
+        } catch (err) {
+          console.error("Erreur upload pièce jointe réponse:", err);
           setError("La pièce jointe n'a pas pu être envoyée. La réponse va tout de même être envoyée sans elle.");
+        }
+      }
+      let reponseImages = [];
+      let reponseHtml = html;
+      if (images.length) {
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = html;
+        const imgEls = Array.from(tempDiv.querySelectorAll("img[data-image-id]"));
+        let uploadFailed = false;
+        // Chaque image est uploadée indépendamment : si l'une échoue, les
+        // autres sont quand même enregistrées. Une image en échec est
+        // retirée du HTML plutôt que laissée avec son URL blob: locale
+        // (invalide dès que la page est rechargée ou vue ailleurs, ce qui
+        // faisait "disparaître" l'image après l'envoi de la réponse).
+        await Promise.all(imgEls.map(async (imgEl) => {
+          const id = imgEl.getAttribute("data-image-id");
+          const entry = images.find((img) => img.id === id);
+          if (!entry?.file) { imgEl.remove(); return; }
+          try {
+            const url = await uploadFileToDrive(entry.file);
+            reponseImages.push({ nom: entry.file.name, url });
+            imgEl.src = url;
+            imgEl.removeAttribute("data-image-id");
+            imgEl.removeAttribute("title");
+          } catch (err) {
+            console.error("Erreur upload image réponse:", err);
+            uploadFailed = true;
+            imgEl.remove();
+          }
+        }));
+        reponseHtml = tempDiv.innerHTML;
+        if (uploadFailed) {
+          setError("Une ou plusieurs images n'ont pas pu être envoyées. La réponse va tout de même être envoyée sans elles.");
         }
       }
       await updateDoc(doc(db, "expertRequests", request.id), {
         archived: true,
         status: "Traitée",
         reponse,
+        reponseHtml,
         reponsePieceJointeUrl: reponsePieceJointeUrl || null,
         reponsePieceJointeNom: reponsePieceJointeUrl ? file?.name || null : null,
+        reponseImages,
         processedAt: serverTimestamp(),
         processedBy: currentUserEmail,
       });
@@ -1700,6 +2007,7 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
             messageOriginal: [request.motif ? `Motif : ${request.motif}` : "", request.message || ""].filter(Boolean).join("\n\n"),
             reponse,
             pieceJointe: reponsePieceJointeUrl ? file?.name || "Pièce jointe" : "Aucune",
+            imagesReponse: reponseImages.map((i) => i.nom).join(", ") || "Aucune",
             traitePar: currentUserEmail,
           }),
         });
@@ -1708,8 +2016,9 @@ function ExpertRequestsModal({ requests, isAdmin, currentUserEmail, onClose }) {
         // on informe simplement l'admin que la notification n'est pas partie.
         setError("La demande a été traitée mais l'e-mail de réponse n'a pas pu être envoyé.");
       }
-    } catch {
-      setError("Impossible de mettre à jour la demande pour l'instant. Réessayez.");
+    } catch (err) {
+      console.error("Erreur handleArchive:", err);
+      setError(`Impossible de mettre à jour la demande pour l'instant (${err?.code || err?.message || "erreur inconnue"}). Réessayez.`);
     } finally {
       setArchivingId(null);
     }
