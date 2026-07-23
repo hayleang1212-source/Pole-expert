@@ -14,40 +14,105 @@ import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, arrayUnion, onSnaps
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzwmR3yGrQhi4BZXjprrkCeD0gSeBZqs3EKjN_9FBIs1y2_Zb3LsBcNzsQSvzGUT-80bw/exec";
 
-const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 Mo
-
-function fileToBase64(file) {
+function blobToBase64(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result.split(",")[1] || "");
     reader.onerror = () => reject(new Error("Lecture du fichier impossible."));
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(blob);
   });
 }
 
-// Envoie le fichier à l'Apps Script existant, qui l'enregistre dans un dossier
-// Google Drive dédié et renvoie son URL de partage. Gratuit : utilise le quota
-// Drive du compte Google propriétaire du script, pas de facturation Firebase.
-async function uploadFileToDrive(file, folderId = null) {
-  if (file.size > MAX_ATTACHMENT_SIZE) {
-    throw new Error("Fichier trop volumineux (10 Mo maximum).");
-  }
-  const fileData = await fileToBase64(file);
-  const payload = {
-    type: folderId ? "upload_pdf_admin" : "upload_piece_jointe",
-    fileName: file.name,
-    mimeType: file.type || (folderId ? "application/pdf" : "application/octet-stream"),
-    fileData,
-  };
-  if (folderId) payload.folderId = folderId;
+// Taille de chaque morceau envoyé à l'Apps Script (avant encodage base64).
+// 8 Mo -> ~10,7 Mo une fois encodé, largement sous la limite d'environ 50 Mo
+// que supporte une requête vers un Web App Apps Script. Doit être un multiple
+// de 256 Ko (contrainte de l'API Drive "resumable"), ce qui est le cas ici.
+const UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024;
+const UPLOAD_MAX_RETRIES = 3;
+
+async function postToAppsScript(payload) {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
   });
+  return res.json();
+}
+
+// Envoie le fichier à l'Apps Script existant, qui l'enregistre dans un dossier
+// Google Drive dédié et renvoie son URL de partage. Gratuit : utilise le quota
+// Drive du compte Google propriétaire du script, pas de facturation Firebase.
+//
+// Le fichier est découpé en morceaux de UPLOAD_CHUNK_SIZE envoyés l'un après
+// l'autre ; côté Apps Script, chaque morceau est relayé vers une session
+// "resumable" de l'API Drive (voir handleChunkUpload dans Code.gs). Cela
+// permet d'envoyer des fichiers de plusieurs centaines de Mo, voire plusieurs
+// Go, sans jamais dépasser la limite de taille d'une requête Apps Script.
+// onProgress(percent) est appelé après chaque morceau si fourni.
+async function uploadFileToDrive(file, folderId = null, onProgress) {
+  const kind = folderId ? "admin" : "piece_jointe";
+  const mimeType = file.type || (folderId ? "application/pdf" : "application/octet-stream");
+  const totalSize = file.size;
+  const totalChunks = Math.max(1, Math.ceil(totalSize / UPLOAD_CHUNK_SIZE));
+
+  let sessionUri = null;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * UPLOAD_CHUNK_SIZE;
+    const end = Math.min(start + UPLOAD_CHUNK_SIZE, totalSize);
+    const chunkData = await blobToBase64(file.slice(start, end));
+
+    const payload = {
+      type: "upload_chunk",
+      kind,
+      fileName: file.name,
+      mimeType,
+      totalSize,
+      chunkData,
+      rangeStart: start,
+      rangeEnd: end - 1,
+      sessionUri,
+    };
+    if (folderId) payload.folderId = folderId;
+
+    let data = null;
+    let lastError = null;
+    for (let attempt = 1; attempt <= UPLOAD_MAX_RETRIES; attempt++) {
+      try {
+        data = await postToAppsScript(payload);
+        if (!data?.ok) throw new Error(data?.error || "Échec de l'envoi du fichier.");
+        lastError = null;
+        break;
+      } catch (err) {
+        lastError = err;
+        if (attempt < UPLOAD_MAX_RETRIES) await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
+    }
+    if (lastError) throw lastError;
+
+    sessionUri = data.sessionUri || sessionUri;
+    if (onProgress) onProgress(Math.round((end / totalSize) * 100));
+
+    if (data.done) {
+      if (!data.fileUrl) throw new Error("Échec de l'upload.");
+      return data.fileUrl;
+    }
+  }
+  throw new Error("Échec de l'upload : le fichier n'a pas été confirmé comme reçu.");
+}
+
+// Demande à l'Apps Script de supprimer (déplacer dans la corbeille) un fichier
+// Drive à partir de son id. Nécessite que l'Apps Script gère un type
+// "delete_drive_file" côté backend (voir note fournie avec ce fichier).
+async function deleteFileFromDrive(fileId) {
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ type: "delete_drive_file", fileId }),
+  });
   const data = await res.json();
-  if (!data?.ok || !data?.fileUrl) throw new Error(data?.error || "Échec de l'upload.");
-  return data.fileUrl;
+  if (!data?.ok) throw new Error(data?.error || "Échec de la suppression.");
+  return true;
 }
 import {
   Headset, ShieldCheck, Package, GraduationCap, ChevronLeft,
@@ -97,6 +162,10 @@ import imgAquamat from "./assets/Aquamat.png";
 import imgPurgeur from "./assets/Purgeur.png";
 import imgSecheurHybritec from "./assets/Hybritec.png";
 import imgSecheurCalorsec from "./assets/Calorsec.png";
+import imgSchemaTemperatureRD from "./assets/Temperature_RD.png";
+import imgSchemaPidEau from "./assets/PID_Eau.png";
+import imgSchemaPTChargeVide from "./assets/P-T_Charge-Vide.png";
+import imgSchemaPidAir from "./assets/PID_Air.png";
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
 
 const DRIVE_API_KEY = "AIzaSyBCzsfVrBWSXSxS_5cVi0ESsQ7cqiNXtPg";
@@ -315,7 +384,13 @@ const CATEGORIES = [
           },
         ],
       },
-      { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche, driveFolderId: "1TDsbAxJXJ0k55rM7EbExljTInHqZCtbh", driveFolderIdCodesDefaut: "1YcFi78aP2YlWC8lw6zoki9gTdrfm9DOb" ,driveFolderIdInstructionTechnique: "1TTViFu40NERinMyqJFS2DJPU62giKX31",driveFolderIdServiceInstruction: "10s4eqnK0uvtQHDOvBR3S2dzvAwqPoom5", driveFolderIdInstructionMontage: "1PnUiU6CSE1N_fYuuC2PWvu3Fv0pBzswA"      
+      { id: "vis-seche", label: "Vis sèche", icon: Server, image: imgVisSeche, driveFolderId: "1TDsbAxJXJ0k55rM7EbExljTInHqZCtbh", driveFolderIdCodesDefaut: "1YcFi78aP2YlWC8lw6zoki9gTdrfm9DOb" ,driveFolderIdInstructionTechnique: "1TTViFu40NERinMyqJFS2DJPU62giKX31",driveFolderIdServiceInstruction: "10s4eqnK0uvtQHDOvBR3S2dzvAwqPoom5", driveFolderIdInstructionMontage: "1PnUiU6CSE1N_fYuuC2PWvu3Fv0pBzswA",
+        schemas: [
+          { label: "Température / pression sécheur RD", src: imgSchemaTemperatureRD },
+          { label: "PID Vis sèche ref. eau", src: imgSchemaPidEau },
+          { label: "Pression/Température en charge et à vide", src: imgSchemaPTChargeVide },
+          { label: "PID vis sèche ref. air", src: imgSchemaPidAir },
+        ]      
       },
 
 
@@ -396,6 +471,7 @@ const CATEGORIES = [
     description: "Enregistrements et demandes",
     icon: ShieldCheck,
     image: iconGarantie,
+    driveFolderId: GARANTIE_CGV_FOLDER_ID,
     items: [
       { id: "demande-garantie", label: "Demande garantie", icon: FileCheck },
       { id: "enregistrement-machine", label: "Enregistrement de la machine", icon: ClipboardList },
@@ -407,6 +483,8 @@ const CATEGORIES = [
     description: "Catalogues et références",
     icon: Package,
     image: iconPiecesDetachees,
+    // Dossier Drive contenant les catalogues de pièces détachées.
+    driveFolderId: "1q0aUSfqOnNwjaKqDq0wsKN9Eq8C4ych7",
     items: [],
   },
   {
@@ -615,7 +693,7 @@ export default function App() {
             )}
           </button>
           {isAdmin && (
-            <button onClick={() => setShowAdminUploadModal(true)} aria-label="Ajouter un document" title="Ajouter un document (admin)" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "38px", height: "38px", background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", cursor: "pointer", color: COLORS.navy }}>
+            <button onClick={() => setShowAdminUploadModal(true)} aria-label="Ajouter / Supprimer un document" title="Ajouter / Supprimer un document (admin)" style={{ display: "flex", alignItems: "center", justifyContent: "center", width: "38px", height: "38px", background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.15)", borderRadius: "8px", cursor: "pointer", color: COLORS.navy }}>
               <Upload size={18} />
             </button>
           )}
@@ -626,8 +704,8 @@ export default function App() {
         <h1
           style={
             isMobile
-              ? { fontSize: "17px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", whiteSpace: "nowrap", order: 3, flexBasis: "100%" }
-              : { fontSize: "32px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }
+              ? { fontSize: "26px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", whiteSpace: "nowrap", order: 3, flexBasis: "100%" }
+              : { fontSize: "48px", fontWeight: 800, margin: 0, textAlign: "center", color: "#FFFFFF", position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)", whiteSpace: "nowrap" }
           }
         >
           Le Pôle Expert
@@ -795,10 +873,16 @@ function SimulateurButton({ item, onOpen }) {
 function DetailPage({ category, item }) {
   const [showExpertForm, setShowExpertForm] = useState(false);
   const [showSimulator, setShowSimulator] = useState(false);
+  const [selectedSchemaId, setSelectedSchemaId] = useState("");
   const isMobile = useIsMobile();
   const simulateurInNoticeRow = Boolean(item.simulateurUrl && item.driveFolderId);
+  const hasSchemas = Array.isArray(item.schemas) && item.schemas.length > 0;
+  // Réinitialise le schéma affiché quand on change de produit, pour ne pas
+  // garder affiché le schéma d'un produit précédent.
+  useEffect(() => { setSelectedSchemaId(""); }, [item.id]);
+  const selectedSchema = hasSchemas ? item.schemas.find((s) => s.label === selectedSchemaId) : null;
   return (
-    <div style={{ display: "flex", gap: isMobile ? "20px" : "60px", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", alignItems: isMobile ? "center" : "flex-start", maxWidth: "1200px" }}>
+    <div style={{ display: "flex", columnGap: isMobile ? "20px" : "60px", rowGap: isMobile ? "20px" : "16px", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", alignItems: isMobile ? "center" : "flex-start", maxWidth: hasSchemas ? "100%" : "1200px" }}>
       <div style={{ flex: isMobile ? "0 0 auto" : "0 0 300px", display: "flex", flexDirection: "column", alignItems: "center" }}>
         {item.image ? (
           <img src={item.image} alt="" style={{ width: 200, height: 200, objectFit: "contain", marginBottom: "10px" }} />
@@ -841,6 +925,17 @@ function DetailPage({ category, item }) {
             {item.driveFolderIdInstructionMontage && (
               <DocumentSection label="Instruction de montage" driveFolderId={item.driveFolderIdInstructionMontage} localFolderId={`${item.id}/instruction-montage`} produit={item.label} categorie={category.label} />
             )}
+            {hasSchemas && (
+              <div style={{ marginTop: "22px" }}>
+                <h3 style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.06em", color: COLORS.textMuted, marginBottom: "10px" }}>Schémas techniques</h3>
+                <CustomSelect
+                  value={selectedSchemaId}
+                  onChange={setSelectedSchemaId}
+                  placeholder="Choisir un schéma…"
+                  options={item.schemas.map((s) => ({ value: s.label, label: s.label }))}
+                />
+              </div>
+            )}
           </>
         )}
         <div style={{ display: "flex", justifyContent: "flex-start", gap: "14px", flexWrap: "wrap", marginTop: "28px" }}>
@@ -851,6 +946,22 @@ function DetailPage({ category, item }) {
           </button>
         </div>
       </div>
+      {hasSchemas && (
+        <>
+          {/* Force le passage à la ligne pour afficher la zone de schéma sous le bouton "Une question ?..." plutôt qu'à côté */}
+          <div style={{ flexBasis: "100%", width: 0 }} />
+          <div style={{ flex: "3 1 256px", maxWidth: "64%", minWidth: isMobile ? "100%" : "256px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", marginTop: "0px" }}>
+            <div style={{ width: "100%", minHeight: "166px", background: "#FFFFFF", border: `1px solid ${COLORS.cardBorder}`, borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+              {selectedSchema ? (
+                <img src={selectedSchema.src} alt={selectedSchema.label} style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain" }} />
+              ) : (
+                <p style={{ fontSize: "13px", color: COLORS.textMuted, fontStyle: "italic", textAlign: "center", margin: 0 }}>Sélectionnez un schéma pour l'afficher ici.</p>
+              )}
+            </div>
+            {selectedSchema && <p style={{ fontSize: "13px", fontWeight: 600, color: COLORS.navy, margin: 0 }}>{selectedSchema.label}</p>}
+          </div>
+        </>
+      )}
       {showExpertForm && <ExpertRequestForm item={item} category={category} onClose={() => setShowExpertForm(false)} />}
       {showSimulator && <SimulatorViewer url={item.simulateurUrl} title={item.simulateurLabel || "Simulateur"} onClose={() => setShowSimulator(false)} />}
     </div>
@@ -2105,13 +2216,51 @@ function AdminUploadModal({ categories, onClose }) {
   const [selectedFolderType, setSelectedFolderType] = useState("");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [message, setMessage] = useState(null);
+  const [folderFiles, setFolderFiles] = useState([]);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   const category = categories.find((c) => c.id === selectedCategory) || null;
-  const productNode = category ? findProductNode(categories, selectedCategory, selectedProduct) : null;
+  // Garantie, Pièces détachées et Formation n'ont pas d'arborescence Produit :
+  // leurs documents vivent directement dans le dossier Drive de la catégorie.
+  const isCategoryLevelDoc = category ? ["garantie", "pieces-detachees", "formation"].includes(category.id) : false;
+  const productNode = !isCategoryLevelDoc && category ? findProductNode(categories, selectedCategory, selectedProduct) : null;
   const availableFolderTypes = productNode
     ? Object.entries(DRIVE_FOLDER_LABELS).filter(([key]) => productNode[key])
     : [];
+  const currentFolderId = isCategoryLevelDoc
+    ? category?.driveFolderId || null
+    : (productNode && selectedFolderType ? productNode[selectedFolderType] : null);
+
+  // Charge la liste des fichiers du dossier Drive dès qu'un type de document
+  // (donc un folderId) est choisi, pour permettre de les supprimer.
+  useEffect(() => {
+    if (!currentFolderId) { setFolderFiles([]); return; }
+    let cancelled = false;
+    setLoadingFiles(true);
+    getDriveFiles(currentFolderId)
+      .then((files) => { if (!cancelled) setFolderFiles(files); })
+      .catch(() => { if (!cancelled) setFolderFiles([]); })
+      .finally(() => { if (!cancelled) setLoadingFiles(false); });
+    return () => { cancelled = true; };
+  }, [currentFolderId]);
+
+  const handleDeleteFile = async (fileId) => {
+    if (!window.confirm("Supprimer définitivement ce fichier du Drive ?")) return;
+    setDeletingId(fileId);
+    setMessage(null);
+    try {
+      await deleteFileFromDrive(fileId);
+      setFolderFiles((prev) => prev.filter((f) => f.id !== fileId));
+      setMessage({ type: "success", text: "Fichier supprimé." });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message || "Échec de la suppression." });
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const handleCategoryChange = (id) => {
     setSelectedCategory(id);
@@ -2128,22 +2277,25 @@ function AdminUploadModal({ categories, onClose }) {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file || !productNode || !selectedFolderType) return;
-    const folderId = productNode[selectedFolderType];
+    if (!file || !currentFolderId) return;
+    const folderId = currentFolderId;
     if (!folderId) {
       setMessage({ type: "error", text: "Aucun dossier Drive associé à ce type de document pour ce produit." });
       return;
     }
     setUploading(true);
+    setUploadProgress(0);
     setMessage(null);
     try {
-      await uploadFileToDrive(file, folderId);
+      await uploadFileToDrive(file, folderId, setUploadProgress);
       setMessage({ type: "success", text: "Fichier envoyé avec succès sur Google Drive." });
       setFile(null);
+      getDriveFiles(folderId).then(setFolderFiles).catch(() => {});
     } catch (err) {
       setMessage({ type: "error", text: err.message || "Échec de l'envoi." });
     } finally {
       setUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -2152,10 +2304,10 @@ function AdminUploadModal({ categories, onClose }) {
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: "16px", maxWidth: "460px", width: "100%", maxHeight: "85vh", overflow: "auto", padding: "28px", position: "relative" }}>
         <button onClick={onClose} aria-label="Fermer" style={{ position: "absolute", top: "16px", right: "16px", background: "none", border: "none", cursor: "pointer", color: COLORS.textMuted }}><X size={20} /></button>
         <h2 style={{ fontSize: "20px", fontWeight: 800, marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
-          <Upload size={20} color={COLORS.gold} />Ajouter un document
+          <Upload size={20} color={COLORS.gold} />Ajouter / Supprimer un document
         </h2>
         <p style={{ fontSize: "13px", color: COLORS.textMuted, marginBottom: "18px" }}>
-          Envoyez un PDF directement dans le dossier Drive du produit concerné.
+          Envoyez un fichier directement dans le dossier Drive du produit concerné.
         </p>
 
         <form onSubmit={handleUpload} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -2167,37 +2319,84 @@ function AdminUploadModal({ categories, onClose }) {
             </select>
           </div>
 
-          <div>
-            <label style={adminLabelStyle}>Produit</label>
-            <select value={selectedProduct} onChange={(e) => handleProductChange(e.target.value)} disabled={!category} style={{ ...selectStyle, width: "100%" }}>
-              <option value="">-- Choisir --</option>
-              {category?.items?.map((p) =>
-                p.items ? (
-                  <optgroup label={p.label} key={p.id}>
-                    {p.items.map((sub) => <option key={sub.id} value={sub.id}>{sub.label}</option>)}
-                  </optgroup>
-                ) : (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                )
+          {!isCategoryLevelDoc && (
+            <div>
+              <label style={adminLabelStyle}>Produit</label>
+              <select value={selectedProduct} onChange={(e) => handleProductChange(e.target.value)} disabled={!category} style={{ ...selectStyle, width: "100%" }}>
+                <option value="">-- Choisir --</option>
+                {category?.items?.map((p) =>
+                  p.items ? (
+                    <optgroup label={p.label} key={p.id}>
+                      {p.items.map((sub) => <option key={sub.id} value={sub.id}>{sub.label}</option>)}
+                    </optgroup>
+                  ) : (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  )
+                )}
+              </select>
+            </div>
+          )}
+
+          {!isCategoryLevelDoc && (
+            <div>
+              <label style={adminLabelStyle}>Type de document</label>
+              <select value={selectedFolderType} onChange={(e) => setSelectedFolderType(e.target.value)} disabled={!productNode} style={{ ...selectStyle, width: "100%" }}>
+                <option value="">-- Choisir --</option>
+                {availableFolderTypes.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+              </select>
+              {productNode && availableFolderTypes.length === 0 && (
+                <p style={{ fontSize: "12px", color: COLORS.textMuted, marginTop: "4px" }}>Aucun dossier Drive configuré pour ce produit.</p>
               )}
-            </select>
-          </div>
+            </div>
+          )}
+
+          {isCategoryLevelDoc && category && !category.driveFolderId && (
+            <p style={{ fontSize: "12px", color: "#C0392B", margin: 0 }}>
+              Aucun dossier Drive n'est encore configuré pour « {category.label} ». Ajoutez son id dans CATEGORIES (champ driveFolderId) pour activer l'upload et la suppression ici.
+            </p>
+          )}
+
+          {currentFolderId && (
+            <div>
+              <label style={adminLabelStyle}>Fichiers dans ce dossier</label>
+              {loadingFiles ? (
+                <p style={{ fontSize: "13px", color: COLORS.textMuted, margin: 0 }}>Chargement…</p>
+              ) : folderFiles.length === 0 ? (
+                <p style={{ fontSize: "13px", color: COLORS.textMuted, margin: 0 }}>Aucun fichier dans ce dossier.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "160px", overflow: "auto", border: `1px solid ${COLORS.cardBorder}`, borderRadius: "8px", padding: "6px" }}>
+                  {folderFiles.map((f) => (
+                    <div key={f.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px", padding: "4px 6px" }}>
+                      <a href={f.url} target="_blank" rel="noreferrer" title={f.name} style={{ fontSize: "13px", color: COLORS.navy, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</a>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFile(f.id)}
+                        disabled={deletingId === f.id}
+                        aria-label={`Supprimer ${f.name}`}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", color: "#C0392B", cursor: deletingId === f.id ? "not-allowed" : "pointer", flexShrink: 0, opacity: deletingId === f.id ? 0.5 : 1 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
-            <label style={adminLabelStyle}>Type de document</label>
-            <select value={selectedFolderType} onChange={(e) => setSelectedFolderType(e.target.value)} disabled={!productNode} style={{ ...selectStyle, width: "100%" }}>
-              <option value="">-- Choisir --</option>
-              {availableFolderTypes.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
-            </select>
-            {productNode && availableFolderTypes.length === 0 && (
-              <p style={{ fontSize: "12px", color: COLORS.textMuted, marginTop: "4px" }}>Aucun dossier Drive configuré pour ce produit.</p>
-            )}
+            <label style={adminLabelStyle}>Fichier</label>
+            <input type="file" onChange={(e) => setFile(e.target.files[0] || null)} style={{ width: "100%" }} />
           </div>
 
-          <div>
-            <label style={adminLabelStyle}>Fichier PDF</label>
-            <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files[0] || null)} style={{ width: "100%" }} />
-          </div>
+          {uploading && (
+            <div>
+              <div style={{ height: "6px", borderRadius: "3px", background: "rgba(0,0,0,0.08)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${uploadProgress}%`, background: COLORS.gold, transition: "width 0.2s ease" }} />
+              </div>
+              <p style={{ fontSize: "12px", color: COLORS.textMuted, marginTop: "4px", marginBottom: 0 }}>Envoi en cours… {uploadProgress}%</p>
+            </div>
+          )}
 
           {message && (
             <p style={{ fontSize: "13px", color: message.type === "error" ? "#C0392B" : "#1E7A34", margin: 0 }}>{message.text}</p>
@@ -2207,8 +2406,8 @@ function AdminUploadModal({ categories, onClose }) {
             <button type="button" onClick={onClose} style={{ padding: "10px 18px", borderRadius: "8px", border: `1px solid ${COLORS.cardBorder}`, background: "#FFFFFF", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}>Fermer</button>
             <button
               type="submit"
-              disabled={uploading || !file || !selectedFolderType}
-              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: COLORS.gold, color: COLORS.navy, cursor: uploading ? "not-allowed" : "pointer", fontSize: "13px", fontWeight: 700, opacity: uploading || !file || !selectedFolderType ? 0.6 : 1 }}
+              disabled={uploading || !file || !currentFolderId}
+              style={{ padding: "10px 18px", borderRadius: "8px", border: "none", background: COLORS.gold, color: COLORS.navy, cursor: uploading ? "not-allowed" : "pointer", fontSize: "13px", fontWeight: 700, opacity: uploading || !file || !currentFolderId ? 0.6 : 1 }}
             >
               {uploading ? "Envoi…" : "Uploader"}
             </button>
